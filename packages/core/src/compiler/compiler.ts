@@ -2,6 +2,7 @@
  * Wraps a shell-based compiler command for use in the mutation pipeline.
  */
 import { spawn } from 'child_process';
+import { closeSync, openSync } from 'fs';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -82,7 +83,10 @@ export class Compiler {
         .replaceAll('{{outputPath}}', outputPath)
         .replaceAll('{{functionName}}', this.#functionName);
 
-      const result = await this.#exec(rendered);
+      const stdoutPath = path.join(tmpDir, `output-${id}.stdout`);
+      const stderrPath = path.join(tmpDir, `output-${id}.stderr`);
+      const result = await this.#exec(rendered, stdoutPath, stderrPath);
+      await Promise.all([fs.unlink(stdoutPath).catch(() => {}), fs.unlink(stderrPath).catch(() => {})]);
 
       await fs.unlink(inputPath).catch(() => {});
 
@@ -132,43 +136,37 @@ export class Compiler {
     }
   }
 
-  #exec(command: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  #exec(
+    command: string,
+    stdoutPath: string,
+    stderrPath: string,
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
+      // Route child stdout/stderr to regular files (fd stdio) rather than
+      // Node's IPC pipes. On macOS, piping Wine-backed subprocess stderr
+      // through Node's pipe adds ~5s of wall per compile (observed with
+      // Wine Crossover + mwcceppc). Writing through an fd opened by Node has
+      // no such penalty; we read the files after the child exits.
+      let stdoutFd: number | undefined;
+      let stderrFd: number | undefined;
+      try {
+        stdoutFd = openSync(stdoutPath, 'w');
+        stderrFd = openSync(stderrPath, 'w');
+      } catch (err) {
+        if (stdoutFd !== undefined) closeSync(stdoutFd);
+        if (stderrFd !== undefined) closeSync(stderrFd);
+        resolve({ exitCode: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+
       // `detached: true` puts the child in its own process group so we can
       // `kill(-pgid)` grandchildren on abort. Without it, aborting a command
       // like `gcc … && as …` would kill the shell but leave the compiler
       // running.
       const proc = spawn('/bin/sh', ['-c', command], {
         cwd: this.#cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', stdoutFd, stderrFd],
         detached: true,
-      });
-
-      let stdout = '';
-      let stderr = '';
-      let stdoutTruncated = false;
-      let stderrTruncated = false;
-
-      proc.stdout.on('data', (data: Buffer) => {
-        if (stdoutTruncated) {
-          return;
-        }
-        stdout += data.toString();
-        if (stdout.length > 50_000) {
-          stdout = stdout.slice(0, 50_000) + '\n... (truncated)';
-          stdoutTruncated = true;
-        }
-      });
-
-      proc.stderr.on('data', (data: Buffer) => {
-        if (stderrTruncated) {
-          return;
-        }
-        stderr += data.toString();
-        if (stderr.length > 50_000) {
-          stderr = stderr.slice(0, 50_000) + '\n... (truncated)';
-          stderrTruncated = true;
-        }
       });
 
       const onAbort = () => {
@@ -183,15 +181,34 @@ export class Compiler {
       };
       this.#signal?.addEventListener('abort', onAbort, { once: true });
 
-      proc.on('close', (code) => {
+      const finalize = async (code: number, fallbackErr?: string): Promise<void> => {
         this.#signal?.removeEventListener('abort', onAbort);
-        resolve({ exitCode: code ?? 1, stdout, stderr });
+        if (stdoutFd !== undefined) closeSync(stdoutFd);
+        if (stderrFd !== undefined) closeSync(stderrFd);
+        const [stdout, stderr] = await Promise.all([readTruncated(stdoutPath), readTruncated(stderrPath)]);
+        resolve({ exitCode: code, stdout, stderr: fallbackErr ?? stderr });
+      };
+
+      proc.on('close', (code) => {
+        void finalize(code ?? 1);
       });
 
       proc.on('error', (err) => {
-        this.#signal?.removeEventListener('abort', onAbort);
-        resolve({ exitCode: 1, stdout, stderr: err.message });
+        void finalize(1, err.message);
       });
     });
+  }
+}
+
+/** Read a file and cap to 50KB with a truncation marker. Missing file → empty string. */
+async function readTruncated(filePath: string): Promise<string> {
+  try {
+    const buf = await fs.readFile(filePath);
+    if (buf.length > 50_000) {
+      return buf.slice(0, 50_000).toString('utf-8') + '\n... (truncated)';
+    }
+    return buf.toString('utf-8');
+  } catch {
+    return '';
   }
 }
