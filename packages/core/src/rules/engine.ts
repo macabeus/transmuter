@@ -2,7 +2,7 @@
  * Mutation engine — selects and applies rules to produce mutated candidates.
  */
 import type { Language } from '~/language.js';
-import { parse } from '~/parser.js';
+import { parseCached } from '~/parser.js';
 import type { Rng } from '~/rng.js';
 import { CompositeNodeFilter } from '~/rules/node-filter.js';
 import type {
@@ -19,6 +19,9 @@ import type { MutationContext, NodeFilter } from './rule.js';
 
 /** Maximum attempts to find an applicable rule before giving up. */
 const MAX_ATTEMPTS = 10;
+
+const PROFILE = !!process.env.TRANSMUTER_PROFILE;
+export const PROFILE_STATS = { parseNs: 0, ruleApplyNs: 0 };
 
 export interface MutationEngineOptions {
   adaptiveSelector: AdaptiveSelector;
@@ -128,7 +131,9 @@ export class MutationEngine {
       return null;
     }
 
-    const root = parse(this.#language, source);
+    const t0 = PROFILE ? process.hrtime.bigint() : 0n;
+    const root = parseCached(this.#language, source);
+    if (PROFILE) PROFILE_STATS.parseNs += Number(process.hrtime.bigint() - t0);
 
     const ctx: MutationContext = {
       source,
@@ -147,7 +152,9 @@ export class MutationEngine {
       );
       const { rule } = active[index]!;
 
+      const tRule = PROFILE ? process.hrtime.bigint() : 0n;
       const result = rule.apply(ctx);
+      if (PROFILE) PROFILE_STATS.ruleApplyNs += Number(process.hrtime.bigint() - tRule);
       if (result !== null && result.source !== source) {
         // Check avoid regions: reject if mutation touched protected lines
         if (this.#touchesAvoidRegion(source, result.source)) {

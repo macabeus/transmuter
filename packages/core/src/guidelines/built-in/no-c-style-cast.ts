@@ -5,7 +5,7 @@
  * Common artifact in decompiled C++ output where casts are often redundant.
  * Removal strips the cast and keeps only the inner expression.
  */
-import { parse } from '~/parser.js';
+import { parseCached } from '~/parser.js';
 import { findTargetFunction } from '~/rules/helpers.js';
 
 import type { Guideline, Violation } from '../guideline.js';
@@ -17,7 +17,7 @@ export const noCStyleCast: Guideline = {
   disabledRules: ['cast-expr'],
 
   detect(source: string, functionName: string): Violation[] {
-    const root = parse('cpp', source);
+    const root = parseCached('cpp', source);
     const fn = findTargetFunction(root, functionName, 'cpp');
     if (!fn) {
       return [];
@@ -42,7 +42,7 @@ export const noCStyleCast: Guideline = {
   },
 
   remove(source: string, violation: Violation): string | null {
-    const root = parse('cpp', source);
+    const root = parseCached('cpp', source);
     const casts = root.root().findAll({ rule: { kind: 'cast_expression' } });
 
     for (const cast of casts) {

@@ -107,3 +107,47 @@ export function parse(language: Language, source: string): SgRoot {
   // For C++, the caller MUST have called ensureLanguageRegistered('cpp') first.
   return sgParse(language, source);
 }
+
+/**
+ * LRU-bounded cache for parsed SgRoots, keyed on (language, source).
+ *
+ * Rationale: during a mutation search the orchestrator iterates on the same
+ * head-candidate source many times in a row — the source only changes when a
+ * fork produces a new candidate. Re-parsing the full source (~45 ms on a
+ * 426 KB ctx file) on every iteration dominates the non-compile CPU budget.
+ *
+ * SgRoot is read-only for rules (they call `.root().find(...)` and never
+ * mutate the AST), so sharing a parse across iterations is safe.
+ *
+ * The cache is keyed on the raw source string. V8 hashes string map keys on
+ * content, not identity, so the same source produced by different code paths
+ * (slot A vs slot B, candidate vs mutation result) still hits.
+ */
+const PARSE_CACHE_MAX = 16;
+const parseCache = new Map<string, SgRoot>();
+
+/** Parse with LRU memoization. Safe for any caller that only reads the AST. */
+export function parseCached(language: Language, source: string): SgRoot {
+  const key = `${language}\0${source}`;
+  const cached = parseCache.get(key);
+  if (cached !== undefined) {
+    // Touch: move to MRU end.
+    parseCache.delete(key);
+    parseCache.set(key, cached);
+    return cached;
+  }
+  const root = parse(language, source);
+  if (parseCache.size >= PARSE_CACHE_MAX) {
+    const oldest = parseCache.keys().next().value;
+    if (oldest !== undefined) {
+      parseCache.delete(oldest);
+    }
+  }
+  parseCache.set(key, root);
+  return root;
+}
+
+/** Reset the parse cache. Used by tests that want deterministic timing. */
+export function clearParseCache(): void {
+  parseCache.clear();
+}

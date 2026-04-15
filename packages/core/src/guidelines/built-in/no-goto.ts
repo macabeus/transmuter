@@ -4,7 +4,7 @@
  * Detects goto statements and removes them so the permuter can
  * find equivalent structured control flow.
  */
-import { parseC } from '~/parser.js';
+import { parseCached } from '~/parser.js';
 import { findTargetFunction } from '~/rules/helpers.js';
 
 import type { Guideline, Violation } from '../guideline.js';
@@ -16,7 +16,7 @@ export const noGoto: Guideline = {
   disabledRules: [],
 
   detect(source: string, functionName: string): Violation[] {
-    const root = parseC(source);
+    const root = parseCached('c', source);
     const fn = findTargetFunction(root, functionName);
     if (!fn) {
       return [];

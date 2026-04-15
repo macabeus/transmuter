@@ -13,7 +13,7 @@
  *    leaving a plain declaration.
  */
 import type { SgNode } from '@ast-grep/napi';
-import { parseC } from '~/parser.js';
+import { parseCached } from '~/parser.js';
 import { findTargetFunction } from '~/rules/helpers.js';
 
 import type { Guideline, Violation } from '../guideline.js';
@@ -25,7 +25,7 @@ export const noAsmPin: Guideline = {
   disabledRules: ['asm-barrier', 'asm-register-swap'],
 
   detect(source: string, functionName: string): Violation[] {
-    const root = parseC(source);
+    const root = parseCached('c', source);
     const fn = findTargetFunction(root, functionName);
     if (!fn) {
       return [];
@@ -112,7 +112,7 @@ export const noAsmPin: Guideline = {
     // AST-based check: parse the source and look for any gnu_asm_expression
     // within the target function. This is more robust than string matching
     // because it handles reformatted code (whitespace changes, reordering).
-    const root = parseC(source);
+    const root = parseCached('c', source);
 
     // Extract function name from the violation's id prefix — we need it
     // to scope the check to the target function. Since we don't have it

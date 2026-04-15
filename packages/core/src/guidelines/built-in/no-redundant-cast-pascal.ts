@@ -7,7 +7,7 @@
  *
  * Example: `integer(0)` → `0`, `char(x)` where x is already a char.
  */
-import { parse } from '~/parser.js';
+import { parseCached } from '~/parser.js';
 import { findTargetFunction } from '~/rules/helpers.js';
 
 import type { Guideline, Violation } from '../guideline.js';
@@ -39,7 +39,7 @@ export const noRedundantCastPascal: Guideline = {
   disabledRules: ['pascal-type-cast'],
 
   detect(source: string, functionName: string): Violation[] {
-    const root = parse('pascal', source);
+    const root = parseCached('pascal', source);
     const fn = findTargetFunction(root, functionName, 'pascal');
     if (!fn) {
       return [];
@@ -81,7 +81,7 @@ export const noRedundantCastPascal: Guideline = {
   },
 
   remove(source: string, violation: Violation): string | null {
-    const root = parse('pascal', source);
+    const root = parseCached('pascal', source);
     const calls = root.root().findAll({ rule: { kind: 'exprCall' } });
 
     for (const call of calls) {

@@ -11,6 +11,7 @@ import type { Deduplicator } from '~/pipeline/deduplicator.js';
 import type { Pool } from '~/pipeline/pool.js';
 import type { AdaptiveSelector } from '~/rules/adaptive-selector.js';
 import type { MutationEngine } from '~/rules/engine.js';
+import { PROFILE_STATS } from '~/rules/engine.js';
 import type { AssemblyScoreResult, MutationSearchEvent, MutationSearchEventHandler } from '~/types.js';
 
 /** Minimal scorer interface used by the SlotOrchestrator. */
@@ -60,6 +61,23 @@ interface SlotStats {
   deduped: number;
 }
 
+interface PhaseTimings {
+  mutate: number;
+  dedup: number;
+  compile: number;
+  score: number;
+  report: number;
+  other: number;
+  iterations: number;
+}
+
+const PROFILE = !!process.env.TRANSMUTER_PROFILE;
+
+function hrms(): number {
+  const [s, ns] = process.hrtime();
+  return s * 1000 + ns / 1_000_000;
+}
+
 export class SlotOrchestrator {
   #opts: SlotOrchestratorOptions;
   #iteration = 0;
@@ -70,6 +88,7 @@ export class SlotOrchestrator {
   #pauseResolvers: (() => void)[] = [];
   #slotStats: SlotStats = { compiled: 0, errors: 0, deduped: 0 };
   #mutationDepth: number;
+  #phaseTimings: PhaseTimings = { mutate: 0, dedup: 0, compile: 0, score: 0, report: 0, other: 0, iterations: 0 };
 
   constructor(opts: SlotOrchestratorOptions) {
     this.#opts = opts;
@@ -84,6 +103,32 @@ export class SlotOrchestrator {
     const slots = Array.from({ length: this.#opts.concurrency }, (_, i) => this.#slotLoop(i));
 
     await Promise.allSettled(slots);
+
+    if (PROFILE) {
+      const elapsedMs = Date.now() - this.#startTime;
+      const wallSec = elapsedMs / 1000;
+      const t = this.#phaseTimings;
+      const iters = t.iterations;
+      const succ = this.#slotStats.compiled;
+      const parseMs = PROFILE_STATS.parseNs / 1_000_000;
+      const ruleApplyMs = PROFILE_STATS.ruleApplyNs / 1_000_000;
+      const summed = t.mutate + t.dedup + t.compile + t.score + t.report;
+      const perIterCpu = summed / Math.max(iters, 1);
+      const capacityWall = elapsedMs * this.#opts.concurrency;
+      const fmt = (ms: number) => `${(ms / 1000).toFixed(2)}s (${((ms / capacityWall) * 100).toFixed(1)}%)`;
+      const line = [
+        `\n[TRANSMUTER_PROFILE]`,
+        `  wall=${wallSec.toFixed(2)}s  iterations=${iters}  successful_compiles=${succ}  concurrency=${this.#opts.concurrency}`,
+        `  iter/s=${(iters / wallSec).toFixed(2)}  avg-iter-cpu=${perIterCpu.toFixed(1)}ms (sum-of-phases/iter)`,
+        `  (phase% is of total-cpu-budget = wall*concurrency = ${(capacityWall / 1000).toFixed(2)}s)`,
+        `  mutate=${fmt(t.mutate)}  [parse=${(parseMs / 1000).toFixed(2)}s  ruleApply=${(ruleApplyMs / 1000).toFixed(2)}s]`,
+        `  dedup=${fmt(t.dedup)}`,
+        `  compile=${fmt(t.compile)}`,
+        `  score=${fmt(t.score)}`,
+        `  report=${fmt(t.report)}`,
+      ].join('\n');
+      process.stderr.write(line + '\n');
+    }
   }
 
   /** Get current iteration count. */
@@ -206,6 +251,7 @@ export class SlotOrchestrator {
       }
 
       // 2. Apply mutation to the head candidate's source
+      const tMutateStart = PROFILE ? hrms() : 0;
       const mutation = engine.mutate(
         headCandidate.source,
         this.#opts.functionName,
@@ -213,6 +259,7 @@ export class SlotOrchestrator {
         this.#mutationDepth,
         headCandidate.breakdown,
       );
+      if (PROFILE) this.#phaseTimings.mutate += hrms() - tMutateStart;
       if (!mutation) {
         continue;
       }
@@ -232,7 +279,10 @@ export class SlotOrchestrator {
       }
 
       // 3. Deduplication check
-      if (deduplicator.checkAndAdd(mutation.source)) {
+      const tDedupStart = PROFILE ? hrms() : 0;
+      const isDup = deduplicator.checkAndAdd(mutation.source);
+      if (PROFILE) this.#phaseTimings.dedup += hrms() - tDedupStart;
+      if (isDup) {
         this.#slotStats.deduped++;
         continue;
       }
@@ -244,7 +294,9 @@ export class SlotOrchestrator {
 
       // 4. Compile
       tightLoopCount = 0;
+      const tCompileStart = PROFILE ? hrms() : 0;
       const compileResult = await compiler.compile(mutation.source);
+      if (PROFILE) this.#phaseTimings.compile += hrms() - tCompileStart;
       if (!compileResult.success) {
         this.#slotStats.errors++;
         pool.recordFailure(target.id);
@@ -260,7 +312,9 @@ export class SlotOrchestrator {
       this.#slotStats.compiled++;
 
       // 5. Score + extract assembly in one pass
+      const tScoreStart = PROFILE ? hrms() : 0;
       const result = await scorer.scoreWithAssembly(compileResult.objPath);
+      if (PROFILE) this.#phaseTimings.score += hrms() - tScoreStart;
 
       // Clean up the compiled object file
       await Compiler.cleanup(compileResult.objPath);
@@ -274,6 +328,7 @@ export class SlotOrchestrator {
 
       // 6. Report to pool (may trigger a fork)
       const ruleId = mutation.ruleIds[0] ?? 'unknown';
+      const tReportStart = PROFILE ? hrms() : 0;
       const { forked } = pool.report(
         {
           mutationTargetId: target.id,
@@ -287,6 +342,7 @@ export class SlotOrchestrator {
         },
         currentIteration,
       );
+      if (PROFILE) this.#phaseTimings.report += hrms() - tReportStart;
 
       // 7. Emit events
       this.#emit({
@@ -328,6 +384,10 @@ export class SlotOrchestrator {
         this.#opts.adaptiveSelector.fork(target.id, forked.mutationTarget.id);
       }
 
+      if (PROFILE) {
+        this.#phaseTimings.iterations++;
+      }
+
       // Perfect match — signal all slots to stop
       if (score === 0) {
         this.#perfectMatchFound = true;
@@ -340,6 +400,10 @@ export class SlotOrchestrator {
         return;
       }
     }
+  }
+
+  getPhaseTimings(): PhaseTimings {
+    return { ...this.#phaseTimings };
   }
 
   #emitStats(iteration: number): void {
