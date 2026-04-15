@@ -21,6 +21,8 @@ import type {
   TimelinePoint,
 } from '~/types.js';
 
+import { extractFunctionDefinition } from '../isolate/extract-function.js';
+
 type ForkedEvent = Extract<MutationSearchEvent, { type: 'forked' }>;
 
 /** Sentinel meaning "no score has been recorded yet". */
@@ -107,6 +109,7 @@ export class SessionStore {
 
   // Source tracking
   #originalSource = '';
+  #contextSource: string | undefined;
   #ruleDescriptions: Record<string, string> = {};
 
   constructor(options: SessionStoreOptions = {}) {
@@ -135,6 +138,24 @@ export class SessionStore {
   /** Set the original source for diff generation. */
   setOriginalSource(source: string): void {
     this.#originalSource = source;
+  }
+
+  /**
+   * Set the pre-isolation source ("context"). Serialized in the report so the
+   * webapp can show it alongside each candidate's isolated source.
+   */
+  setContextSource(source: string): void {
+    this.#contextSource = source;
+  }
+
+  /** The pre-isolation source if one was recorded, otherwise undefined. */
+  getContextSource(): string | undefined {
+    return this.#contextSource;
+  }
+
+  /** The target function name from the session config. Empty string if unset. */
+  getFunctionName(): string {
+    return this.#config?.functionName ?? '';
   }
 
   /** Process a MutationSearchEvent. Safe to call from the onEvent callback. */
@@ -496,10 +517,29 @@ export class SessionStore {
       metadata: { ...this.#metadata },
       config: this.#config ?? EMPTY_CONFIG,
       summary: this.getSummary(),
-      graph: this.getGraph(),
+      graph: this.#getGraphForReport(),
       ruleStats: this.getRuleStats(),
       scoreTimeline: this.getScoreTimeline(),
       focusResults: this.getFocusResults(),
+      ...(this.#contextSource !== undefined && { contextSource: this.#contextSource }),
+    };
+  }
+
+  /**
+   * Like getGraph(), but each candidate's `source` is sliced down to the
+   * target function definition. Used for the serialized report so consumers
+   * (webapp, ctl) only see what Transmuter actually mutates. The in-memory
+   * graph keeps the full source for engine consumers via getGraph().
+   */
+  #getGraphForReport(): { candidates: CandidateNode[]; mutationTargets: MutationTarget[]; superNodes?: SuperNode[] } {
+    const graph = this.getGraph();
+    const fnName = this.#config?.functionName;
+    if (!fnName) {
+      return graph;
+    }
+    return {
+      ...graph,
+      candidates: graph.candidates.map((c) => ({ ...c, source: extractFunctionDefinition(c.source, fnName) })),
     };
   }
 

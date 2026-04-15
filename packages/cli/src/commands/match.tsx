@@ -38,6 +38,7 @@ export interface MatchArgs {
   timeout?: number;
   seed?: number;
   noReduce?: boolean;
+  isolate?: boolean;
   depth?: number;
   noCleanup?: boolean;
   config?: string;
@@ -377,11 +378,20 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           return;
         }
 
-        let finalSource = source;
+        let workingSource = source;
+        let contextSource: string | undefined;
+        if (args.isolate ?? transmuterConfig?.isolate) {
+          const { isolateFunction } = await import('@transmuter/core');
+          const result = isolateFunction(workingSource, fnName);
+          contextSource = workingSource;
+          workingSource = result.source;
+        }
+
+        let finalSource = workingSource;
         if (!(args.noReduce ?? transmuterConfig?.noReduce)) {
           const { Reducer } = await import('@transmuter/core');
           const reducer = new Reducer({
-            source,
+            source: workingSource,
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
@@ -404,6 +414,9 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         });
         storeRef.current = store;
         store.setOriginalSource(finalSource);
+        if (contextSource !== undefined) {
+          store.setContextSource(contextSource);
+        }
         store.setConfig({
           functionName: fnName,
           targetObjectPath: targetPath,

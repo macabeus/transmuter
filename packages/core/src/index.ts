@@ -121,6 +121,11 @@ export type { SmellBreakdown } from './cleanup/smell.js';
 // Reducer
 export { Reducer } from './reducer/reducer.js';
 
+// Isolate
+export { isolateFunction } from './isolate/isolate.js';
+export type { IsolateResult } from './isolate/isolate.js';
+export { extractFunctionDefinition } from './isolate/extract-function.js';
+
 // Scoring (for advanced consumers)
 export { Scorer } from './scoring/scorer.js';
 export { Objdiff } from './scoring/objdiff.js';

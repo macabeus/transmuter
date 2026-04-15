@@ -8,6 +8,7 @@
  * The server writes a discovery file so external processes can find the port.
  */
 import { serve } from '@hono/node-server';
+import { extractFunctionDefinition } from '@transmuter/core';
 import type {
   ActiveSubSession,
   AvoidRegionConstraint,
@@ -122,7 +123,8 @@ const COMMON_READ_ENDPOINTS: EndpointDescription[] = [
     method: 'GET',
     path: '/candidates',
     description:
-      'All CandidateNodes. Supports query filters: ?maxScore=N, ?minScore=N, ?origin=genesis|organic|external, ?limit=N.',
+      'All CandidateNodes. Each candidate\'s `source` field is sliced to the target function definition (call /context-source for the full TU). ' +
+      'Supports query filters: ?maxScore=N, ?minScore=N, ?origin=genesis|organic|external, ?limit=N.',
   },
   {
     method: 'GET',
@@ -165,7 +167,9 @@ const COMMON_READ_ENDPOINTS: EndpointDescription[] = [
   {
     method: 'GET',
     path: '/graph',
-    description: 'Full candidate graph: { candidates: CandidateNode[], mutationTargets: MutationTarget[] }.',
+    description:
+      'Full candidate graph: { candidates: CandidateNode[], mutationTargets: MutationTarget[] }. ' +
+      'Candidate source fields are sliced to the target function definition.',
   },
   {
     method: 'GET',
@@ -205,7 +209,16 @@ const COMMON_READ_ENDPOINTS: EndpointDescription[] = [
     method: 'GET',
     path: '/report',
     description:
-      'Full SessionReport JSON (same format as the saved .json file). Contains all of the above plus config and metadata.',
+      'Full SessionReport JSON (same format as the saved .json file). Contains all of the above plus config and metadata. ' +
+      'Candidate source fields are sliced to the target function definition (see /context-source for the pre-isolation TU).',
+  },
+  {
+    method: 'GET',
+    path: '/context-source',
+    description:
+      'Pre-isolation source (the full TU passed to `transmuter match`) when `--isolate` was used. ' +
+      'Returns { present: true, length, source } or { present: false } if isolation was not applied. ' +
+      'Candidate sources in /candidates, /graph, /report, etc. are sliced to just the target function; this endpoint is the way to retrieve the surrounding context.',
   },
   {
     method: 'GET',
@@ -356,12 +369,26 @@ interface SearchRouteDeps {
 function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
   const { getSearch, getStore } = deps;
 
+  /**
+   * Slice a candidate's `source` field to just the target function definition
+   * for outbound HTTP responses. Internal operations that compile or diff the
+   * candidate keep using the raw source fetched directly from the store.
+   */
+  function slice<T extends { source: string }>(candidate: T, store: SessionStore | null): T {
+    const fnName = store?.getFunctionName();
+    if (!fnName) {
+      return candidate;
+    }
+    return { ...candidate, source: extractFunctionDefinition(candidate.source, fnName) };
+  }
+
   // -- Read operations --
 
   app.get('/session', (c) => {
     const store = getStore();
     const state = getSearch().getState();
     const summary = store?.getSummary();
+    const fnName = store?.getFunctionName();
     return c.json({
       running: state.running,
       paused: state.paused,
@@ -372,7 +399,7 @@ function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
       bestScore: summary?.bestScore ?? state.bestScore,
       scoreDelta: summary?.scoreDelta ?? 0,
       perfectMatch: summary?.perfectMatch ?? false,
-      bestSource: state.bestSource,
+      bestSource: fnName ? extractFunctionDefinition(state.bestSource, fnName) : state.bestSource,
       forkCount: summary?.forkCount ?? 0,
       totalCompiled: summary?.totalCompiled ?? 0,
       totalErrors: summary?.totalErrors ?? 0,
@@ -418,17 +445,22 @@ function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
       candidates = candidates.slice(0, Number(limit));
     }
 
-    return c.json(candidates);
+    return c.json(candidates.map((cand) => slice(cand, store)));
   });
 
-  app.get('/candidates/best', (c) => c.json(getStore()?.getBestCandidate() ?? null));
+  app.get('/candidates/best', (c) => {
+    const store = getStore();
+    const best = store?.getBestCandidate();
+    return c.json(best ? slice(best, store) : null);
+  });
 
   app.get('/candidates/:id', (c) => {
-    const candidate = getStore()?.getCandidate(c.req.param('id'));
+    const store = getStore();
+    const candidate = store?.getCandidate(c.req.param('id'));
     if (!candidate) {
       return c.json({ error: `Candidate '${c.req.param('id')}' not found` }, 404);
     }
-    return c.json(candidate);
+    return c.json(slice(candidate, store));
   });
 
   app.get('/candidates/:id/lineage', (c) => {
@@ -436,7 +468,7 @@ function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
     if (!store?.getCandidate(c.req.param('id'))) {
       return c.json({ error: `Candidate '${c.req.param('id')}' not found` }, 404);
     }
-    return c.json(store.getLineage(c.req.param('id')));
+    return c.json(store.getLineage(c.req.param('id')).map((cand) => slice(cand, store)));
   });
 
   app.get('/candidates/:id/children', (c) => {
@@ -444,7 +476,7 @@ function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
     if (!store?.getCandidate(c.req.param('id'))) {
       return c.json({ error: `Candidate '${c.req.param('id')}' not found` }, 404);
     }
-    return c.json(store.getChildren(c.req.param('id')));
+    return c.json(store.getChildren(c.req.param('id')).map((cand) => slice(cand, store)));
   });
 
   app.get('/candidates/:id/delta', async (c) => {
@@ -526,7 +558,20 @@ function registerSearchRoutes(app: Hono, deps: SearchRouteDeps): void {
 
   app.get('/graph', (c) => {
     const store = getStore();
-    return c.json(store?.getGraph() ?? { candidates: [], mutationTargets: [] });
+    const graph = store?.getGraph() ?? { candidates: [], mutationTargets: [] };
+    return c.json({
+      ...graph,
+      candidates: graph.candidates.map((cand) => slice(cand, store)),
+    });
+  });
+
+  app.get('/context-source', (c) => {
+    const store = getStore();
+    const source = store?.getContextSource();
+    if (source === undefined) {
+      return c.json({ present: false });
+    }
+    return c.json({ present: true, length: source.length, source });
   });
 
   app.get('/rules', (c) => {

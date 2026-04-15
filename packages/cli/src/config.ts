@@ -15,6 +15,7 @@ export interface TransmuterToolConfig {
   maxIterations?: number;
   timeoutMs?: number;
   noReduce?: boolean;
+  isolate?: boolean;
   ruleWeights?: Record<string, number>;
   disabledRules?: string[];
   diffSettings?: Record<string, string>;

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 
 import { RefinementApp } from './RefinementApp';
 import { CandidateGraph } from './components/CandidateGraph';
+import { CodeBlock } from './components/CodeBlock';
 import { FocusResults } from './components/FocusResults';
 import { Header } from './components/Header';
 import { Icon, type IconName } from './components/Icon';
@@ -114,6 +115,26 @@ function ScoreBadge({ base, best, perfect }: { base: number; best: number; perfe
   );
 }
 
+function ContextSourceView({
+  source,
+  language,
+}: {
+  source: string;
+  language: 'c' | 'cpp' | 'pascal';
+}): React.ReactElement {
+  return (
+    <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-5">
+      <div className="flex items-baseline justify-between mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Context source</h3>
+        <span className="text-[10px] text-slate-500">
+          {source.length.toLocaleString()} bytes — pre-isolation, shared across all candidates
+        </span>
+      </div>
+      <CodeBlock code={source} language={language} />
+    </div>
+  );
+}
+
 function TabContent({ tab, report }: { tab: Tab; report: SessionReport }): React.ReactElement {
   switch (tab) {
     case 'overview':
@@ -121,6 +142,9 @@ function TabContent({ tab, report }: { tab: Tab; report: SessionReport }): React
         <div className="space-y-6">
           <SessionSummaryView summary={report.summary} config={report.config} metadata={report.metadata} />
           {report.scoreTimeline.length > 1 && <ScoreTimeline timeline={report.scoreTimeline} />}
+          {report.contextSource !== undefined && (
+            <ContextSourceView source={report.contextSource} language={report.config.language ?? 'c'} />
+          )}
         </div>
       );
     case 'graph':

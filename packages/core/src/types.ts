@@ -542,6 +542,12 @@ export interface SessionReport {
   readonly focusResults: readonly FocusResult[];
   /** Post-match cleanup results (present when --cleanup was used) */
   readonly cleanup?: CleanupReportData;
+  /**
+   * Pre-isolation source of the input TU. Present when `--isolate` was used,
+   * letting the webapp show the unmodified context alongside each candidate's
+   * isolated source.
+   */
+  readonly contextSource?: string;
 }
 
 export interface SessionMetadata {

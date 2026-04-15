@@ -35,6 +35,9 @@ Match Options:
   --timeout <ms>       Maximum time in milliseconds
   --seed <n>           RNG seed for reproducibility
   --no-reduce          Skip source reduction before permuting
+  --isolate            Strip non-target, non-inline function bodies and
+                       #defines before reduce/match — useful on preprocessed
+                       .ctx files where most of the source is irrelevant
   --depth <n>          Mutations per iteration (default: 1)
   --no-cleanup         Skip cleanup after finding a match
   --config <path>      Path to decomp.yaml
@@ -91,6 +94,7 @@ async function main(): Promise<void> {
           timeout: { type: 'string' },
           seed: { type: 'string' },
           'no-reduce': { type: 'boolean' },
+          isolate: { type: 'boolean' },
           depth: { type: 'string' },
           'no-cleanup': { type: 'boolean' },
           config: { type: 'string' },
@@ -118,6 +122,7 @@ async function main(): Promise<void> {
         timeout: values.timeout ? Number(values.timeout) : undefined,
         seed: values.seed ? Number(values.seed) : undefined,
         noReduce: values['no-reduce'],
+        isolate: values.isolate,
         depth: values.depth ? Number(values.depth) : undefined,
         noCleanup: values['no-cleanup'],
         config: values.config,

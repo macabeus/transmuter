@@ -81,15 +81,15 @@ function mockStore() {
       { id: 'c-2', score: 40, origin: 'organic', source: 'code2' },
       { id: 'c-3', score: 100, origin: 'external', source: 'code3' },
     ]),
-    getBestCandidate: vi.fn().mockReturnValue({ id: 'c-2', score: 40 }),
+    getBestCandidate: vi.fn().mockReturnValue({ id: 'c-2', score: 40, source: 'code2' }),
     getCandidate: vi.fn().mockReturnValue({ id: 'c-0', score: 80, source: 'code' }),
-    getLineage: vi.fn().mockReturnValue([{ id: 'c-0' }]),
+    getLineage: vi.fn().mockReturnValue([{ id: 'c-0', source: 'code' }]),
     getChildren: vi.fn().mockReturnValue([]),
     getGraph: vi.fn().mockReturnValue({
       candidates: [
-        { id: 'c-0', score: 80 },
-        { id: 'c-1', score: 60 },
-        { id: 'c-2', score: 40 },
+        { id: 'c-0', score: 80, source: 'code0' },
+        { id: 'c-1', score: 60, source: 'code1' },
+        { id: 'c-2', score: 40, source: 'code2' },
       ],
       mutationTargets: [
         { id: 't-0', candidateId: 'c-0', enabled: true },
@@ -97,6 +97,8 @@ function mockStore() {
         { id: 't-2', candidateId: 'c-2', enabled: true },
       ],
     }),
+    getFunctionName: vi.fn().mockReturnValue(''),
+    getContextSource: vi.fn().mockReturnValue(undefined),
     getRuleStats: vi.fn().mockReturnValue([]),
     getScoreTimeline: vi.fn().mockReturnValue([]),
     getFocusResults: vi.fn().mockReturnValue([]),
@@ -329,6 +331,55 @@ describe('ControlServer', () => {
     expect(status).toBe(200);
     const graph = data as { candidates: unknown[]; mutationTargets: unknown[] };
     expect(graph.candidates.length).toBe(3);
+  });
+
+  // -- Candidate source slicing --
+
+  it('slices candidate sources to the target function when functionName is set', async () => {
+    const full = [
+      'typedef int u32;',
+      'int other(void) { return 1; }',
+      'int target(int x) { return x * 2; }',
+      'int trailing(void) { return 0; }',
+    ].join('\n');
+    store.getFunctionName.mockReturnValue('target');
+    store.getCandidate.mockReturnValueOnce({ id: 'c-0', score: 80, source: full });
+
+    const { status, data } = await request(server.port, 'GET', '/candidates/c-0');
+    expect(status).toBe(200);
+    expect((data as { source: string }).source).toBe('int target(int x) { return x * 2; }');
+  });
+
+  it('leaves sources untouched when no functionName is configured', async () => {
+    store.getFunctionName.mockReturnValue('');
+    store.getCandidate.mockReturnValueOnce({ id: 'c-0', score: 80, source: 'arbitrary text' });
+
+    const { data } = await request(server.port, 'GET', '/candidates/c-0');
+    expect((data as { source: string }).source).toBe('arbitrary text');
+  });
+
+  // -- Context source --
+
+  it('GET /context-source returns { present: false } when isolation was not used', async () => {
+    const { status, data } = await request(server.port, 'GET', '/context-source');
+    expect(status).toBe(200);
+    expect(data).toEqual({ present: false });
+  });
+
+  it('GET /context-source returns the full source when isolation was used', async () => {
+    const ctx = '/* full pre-isolation TU */\nint target(void) { return 0; }';
+    store.getContextSource.mockReturnValue(ctx);
+    const { status, data } = await request(server.port, 'GET', '/context-source');
+    expect(status).toBe(200);
+    expect(data).toEqual({ present: true, length: ctx.length, source: ctx });
+  });
+
+  it('documents /context-source on GET /', async () => {
+    const { data } = await request(server.port, 'GET', '/');
+    const body = data as { endpoints: { method: string; path: string; description: string }[] };
+    const entry = body.endpoints.find((e) => e.method === 'GET' && e.path === '/context-source');
+    expect(entry).toBeDefined();
+    expect(entry!.description).toMatch(/pre-isolation/i);
   });
 
   it('GET /rules returns rule catalog', async () => {

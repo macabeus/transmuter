@@ -105,6 +105,11 @@ const ACTIONS: Record<string, ActionDef> = {
     description: 'Get assembly diff for a candidate (arg: candidate-id)',
   },
   graph: { method: 'GET', path: '/graph', description: 'Get full candidate graph' },
+  'context-source': {
+    method: 'GET',
+    path: '/context-source',
+    description: 'Get the pre-isolation source (present only when --isolate was used)',
+  },
   rules: { method: 'GET', path: '/rules', description: 'Get rule stats' },
   timeline: { method: 'GET', path: '/timeline', description: 'Get score timeline' },
   report: { method: 'GET', path: '/report', description: 'Get full session report' },
@@ -196,6 +201,7 @@ Actions:
   children <id>                Get candidate children
   assembly <id>                Get assembly diff for a candidate
   graph                        Get full candidate graph
+  context-source               Get pre-isolation source (--isolate runs only)
   rules                        Get rule stats
   timeline                     Get score timeline
   report                       Get full session report
