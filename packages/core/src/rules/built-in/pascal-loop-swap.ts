@@ -7,7 +7,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getIndentation, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getIndentation, replaceRange } from '../helpers.js';
 import { getPascalStatements } from '../pascal-helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
@@ -25,8 +25,8 @@ export const pascalLoopSwap: Rule = {
       return null;
     }
 
-    const whileNodes = fn.findAll({ rule: { kind: 'while' } });
-    const repeatNodes = fn.findAll({ rule: { kind: 'repeat' } });
+    const whileNodes = findAllByKind(fn, 'while');
+    const repeatNodes = findAllByKind(fn, 'repeat');
 
     // Try while true -> repeat until false
     const whileTrueCandidates = whileNodes.filter((n) => {

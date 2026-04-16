@@ -7,7 +7,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const IDENTITY_OPS = [{ op: '* 1' }, { op: '+ 0' }, { op: '| 0' }, { op: '- 0' }] as const;
@@ -26,8 +26,8 @@ export const multZero: Rule = {
     }
 
     // Find identifier and number_literal nodes in expression contexts
-    const identifiers = fn.findAll({ rule: { kind: 'identifier' } });
-    const numberLiterals = fn.findAll({ rule: { kind: 'number_literal' } });
+    const identifiers = findAllByKind(fn, 'identifier');
+    const numberLiterals = findAllByKind(fn, 'number_literal');
     const candidates = [...identifiers, ...numberLiterals].filter((n) => {
       if (isInsideAsm(n)) {
         return false;

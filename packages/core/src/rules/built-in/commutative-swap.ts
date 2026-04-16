@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const COMMUTATIVE_OPS = new Set(['+', '*', '&', '|', '^', '==', '!=']);
@@ -25,7 +25,7 @@ export const commutativeSwap: Rule = {
     }
 
     // Find all binary_expression nodes with commutative operators
-    const candidates = fn.findAll({ rule: { kind: 'binary_expression' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'binary_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

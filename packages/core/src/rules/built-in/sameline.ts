@@ -6,7 +6,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getStatements } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getStatements } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const sameline: Rule = {
@@ -24,7 +24,7 @@ export const sameline: Rule = {
     }
 
     // Find all compound_statement blocks inside the function
-    const blocks = fn.findAll({ rule: { kind: 'compound_statement' } });
+    const blocks = findAllByKind(fn, 'compound_statement');
     if (blocks.length === 0) {
       return null;
     }

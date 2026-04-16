@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const FLIP_OPS: Record<string, string> = {
@@ -29,7 +29,7 @@ export const inequalitySwap: Rule = {
       return null;
     }
 
-    const candidates = fn.findAll({ rule: { kind: 'binary_expression' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'binary_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

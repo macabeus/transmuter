@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getDeclarations, swapRanges } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getDeclarations, swapRanges } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const reorderDecls: Rule = {
@@ -23,7 +23,7 @@ export const reorderDecls: Rule = {
     }
 
     // Find all compound_statement blocks inside the function
-    const blocks = fn.findAll({ rule: { kind: 'compound_statement' } });
+    const blocks = findAllByKind(fn, 'compound_statement');
     if (blocks.length === 0) {
       return null;
     }

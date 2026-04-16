@@ -8,14 +8,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { MutationApplyResult } from '~/types.js';
 
-import {
-  findTargetFunction,
-  getDeclarations,
-  getIndentation,
-  isInsideAsm,
-  isSameNode,
-  replaceRange,
-} from '../helpers.js';
+import { findAllByKind, findTargetFunction, getDeclarations, getIndentation, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 interface VarInfo {
@@ -33,7 +26,7 @@ function extractVarInfo(decl: SgNode): VarInfo | null {
   const typeText = typeNode.text();
 
   // Look for init_declarator (e.g., `int x = 0;`)
-  const initDeclarators = decl.findAll({ rule: { kind: 'init_declarator' } });
+  const initDeclarators = findAllByKind(decl, 'init_declarator');
   for (const d of initDeclarators) {
     const ident = d.field('declarator');
     if (ident && ident.kind() === 'identifier') {
@@ -42,7 +35,7 @@ function extractVarInfo(decl: SgNode): VarInfo | null {
   }
 
   // Plain declaration (e.g., `int x;`)
-  const identifiers = decl.findAll({ rule: { kind: 'identifier' } });
+  const identifiers = findAllByKind(decl, 'identifier');
   for (const ident of identifiers) {
     const parent = ident.parent();
     if (parent && parent.kind() === 'declaration') {

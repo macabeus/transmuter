@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, swapRanges } from '../helpers.js';
+import { findAllByKind, findTargetFunction, swapRanges } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const COMMUTATIVE_OPS = new Set(['+', '*', '=', '<>']);
@@ -24,7 +24,7 @@ export const pascalCommutativeSwap: Rule = {
       return null;
     }
 
-    const candidates = fn.findAll({ rule: { kind: 'exprBinary' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'exprBinary').filter((n) => {
       const children = n.children();
       if (children.length < 3) {
         return false;

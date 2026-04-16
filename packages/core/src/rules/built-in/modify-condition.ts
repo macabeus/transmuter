@@ -10,7 +10,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 /** Map comparison operators to their negated counterparts. */
@@ -43,8 +43,8 @@ export const modifyCondition: Rule = {
     }
 
     // Find if_statement and while_statement nodes
-    const ifStmts = fn.findAll({ rule: { kind: 'if_statement' } });
-    const whileStmts = fn.findAll({ rule: { kind: 'while_statement' } });
+    const ifStmts = findAllByKind(fn, 'if_statement');
+    const whileStmts = findAllByKind(fn, 'while_statement');
     const candidates = [...ifStmts, ...whileStmts].filter((n) => !isInsideAsm(n));
 
     if (candidates.length === 0) {

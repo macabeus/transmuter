@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const structRefSwap: Rule = {
@@ -23,7 +23,7 @@ export const structRefSwap: Rule = {
     }
 
     // Find `a->b` candidates (field_expression with -> operator)
-    const arrowCandidates = fn.findAll({ rule: { kind: 'field_expression' } }).filter((n) => {
+    const arrowCandidates = findAllByKind(fn, 'field_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }
@@ -32,7 +32,7 @@ export const structRefSwap: Rule = {
 
     // Find `(*a).b` candidates (field_expression with '.' where argument is parenthesized
     // pointer_expression)
-    const derefDotCandidates = fn.findAll({ rule: { kind: 'field_expression' } }).filter((n) => {
+    const derefDotCandidates = findAllByKind(fn, 'field_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

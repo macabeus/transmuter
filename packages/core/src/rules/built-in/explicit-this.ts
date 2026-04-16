@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const explicitThis: Rule = {
@@ -25,7 +25,7 @@ export const explicitThis: Rule = {
 
     if (direction === 'remove') {
       // Find `this->member` field_expression nodes
-      const candidates = fn.findAll({ rule: { kind: 'field_expression' } }).filter((n) => {
+      const candidates = findAllByKind(fn, 'field_expression').filter((n) => {
         if (isInsideAsm(n)) {
           return false;
         }
@@ -50,7 +50,7 @@ export const explicitThis: Rule = {
       };
     } else {
       // Find identifiers that could be implicit member accesses
-      const candidates = fn.findAll({ rule: { kind: 'identifier' } }).filter((n) => {
+      const candidates = findAllByKind(fn, 'identifier').filter((n) => {
         if (isInsideAsm(n)) {
           return false;
         }

@@ -6,9 +6,7 @@
  *
  * Ported from Mizuchi's src/shared/objdiff.ts.
  */
-import fs from 'fs/promises';
 import type * as ObjdiffWasm from 'objdiff-wasm';
-import { fileURLToPath } from 'url';
 import type { DiffType, StructuredDifference } from '~/types.js';
 
 type ObjdiffModule = typeof ObjdiffWasm;
@@ -35,29 +33,9 @@ export class Objdiff {
   }
 
   static async #initializeObjdiff(): Promise<ObjdiffModule> {
-    // Node's fetch doesn't resolve file:// URLs; Bun's does. Patch on Node only.
-    const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
-    const originalFetch = isBun ? null : global.fetch;
-    if (!isBun) {
-      global.fetch = (async (input: string | URL | Request): Promise<Response> => {
-        const url = input.toString();
-        if (url.includes('objdiff.core.wasm')) {
-          const buffer = await fs.readFile(fileURLToPath(url));
-          return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
-        }
-        return originalFetch!(input);
-      }) as typeof global.fetch;
-    }
-
-    try {
-      const objdiff = await import('objdiff-wasm');
-      objdiff.init('error');
-      return objdiff;
-    } finally {
-      if (!isBun) {
-        global.fetch = originalFetch!;
-      }
-    }
+    const objdiff = await import('objdiff-wasm');
+    objdiff.init('error');
+    return objdiff;
   }
 
   /**
@@ -81,7 +59,7 @@ export class Objdiff {
     const objdiff = await Objdiff.#wasmModule!;
     const diffConfig = await this.#getDiffConfig();
 
-    const fileBuffer = await fs.readFile(filePath);
+    const fileBuffer = await Bun.file(filePath).arrayBuffer();
     const parsedObject = objdiff.diff.Object.parse(new Uint8Array(fileBuffer), diffConfig, side);
 
     return parsedObject;

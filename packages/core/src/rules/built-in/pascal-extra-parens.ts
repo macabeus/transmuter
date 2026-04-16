@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const pascalExtraParens: Rule = {
@@ -21,7 +21,7 @@ export const pascalExtraParens: Rule = {
       return null;
     }
 
-    const candidates = fn.findAll({ rule: { kind: 'exprBinary' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'exprBinary').filter((n) => {
       const parent = n.parent();
       if (!parent) {
         return false;

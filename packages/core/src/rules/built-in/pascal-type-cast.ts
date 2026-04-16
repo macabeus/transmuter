@@ -9,7 +9,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const CAST_TYPES = new Set(['integer', 'char', 'boolean', 'word', 'byte', 'longint']);
@@ -32,7 +32,7 @@ export const pascalTypeCast: Rule = {
 
     if (direction === 'remove') {
       // Find call nodes where the function name matches a cast type
-      const candidates = fn.findAll({ rule: { kind: 'exprCall' } }).filter((n) => {
+      const candidates = findAllByKind(fn, 'exprCall').filter((n) => {
         const funcNode = n.children()[0];
         if (!funcNode || funcNode.kind() !== 'identifier') {
           return false;
@@ -61,7 +61,7 @@ export const pascalTypeCast: Rule = {
       };
     } else {
       // Add a type cast around a random identifier
-      const candidates = fn.findAll({ rule: { kind: 'identifier' } }).filter((n) => {
+      const candidates = findAllByKind(fn, 'identifier').filter((n) => {
         const parent = n.parent();
         if (!parent) {
           return false;

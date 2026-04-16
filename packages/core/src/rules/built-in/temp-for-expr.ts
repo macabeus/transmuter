@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const tempForExpr: Rule = {
@@ -23,8 +23,8 @@ export const tempForExpr: Rule = {
     }
 
     // Find binary_expression and call_expression nodes inside the function
-    const binaryExprs = fn.findAll({ rule: { kind: 'binary_expression' } });
-    const callExprs = fn.findAll({ rule: { kind: 'call_expression' } });
+    const binaryExprs = findAllByKind(fn, 'binary_expression');
+    const callExprs = findAllByKind(fn, 'call_expression');
     const candidates = [...binaryExprs, ...callExprs].filter((n) => !isInsideAsm(n));
 
     if (candidates.length === 0) {

@@ -6,7 +6,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 /** Patterns we look for and what they swap to. */
@@ -34,7 +34,7 @@ export const asmRegisterSwap: Rule = {
     }
 
     // Find all gnu_asm_expression nodes
-    const asmNodes = fn.findAll({ rule: { kind: 'gnu_asm_expression' } });
+    const asmNodes = findAllByKind(fn, 'gnu_asm_expression');
     if (asmNodes.length === 0) {
       return null;
     }

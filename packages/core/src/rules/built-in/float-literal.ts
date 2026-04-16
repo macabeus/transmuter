@@ -6,7 +6,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const floatLiteral: Rule = {
@@ -23,7 +23,7 @@ export const floatLiteral: Rule = {
     }
 
     // Find number_literal nodes that contain '.' (float literals)
-    const candidates = fn.findAll({ rule: { kind: 'number_literal' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'number_literal').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

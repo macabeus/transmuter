@@ -9,7 +9,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 import { isPowerOf2, log2 } from '~/utils/math.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 interface ShiftCandidate {
@@ -34,7 +34,7 @@ export const pascalArithShift: Rule = {
     const candidates: ShiftCandidate[] = [];
 
     // Find `x * N` or `x div N` where N is a power of 2
-    const binaryExprs = fn.findAll({ rule: { kind: 'exprBinary' } });
+    const binaryExprs = findAllByKind(fn, 'exprBinary');
     for (const n of binaryExprs) {
       const children = n.children();
       if (children.length < 3) {
@@ -61,7 +61,7 @@ export const pascalArithShift: Rule = {
     }
 
     // Find shl(x, N) or shr(x, N) call expressions
-    const callExprs = fn.findAll({ rule: { kind: 'exprCall' } });
+    const callExprs = findAllByKind(fn, 'exprCall');
     for (const n of callExprs) {
       const funcNode = n.children()[0];
       if (!funcNode || funcNode.kind() !== 'identifier') {

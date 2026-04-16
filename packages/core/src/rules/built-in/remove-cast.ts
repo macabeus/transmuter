@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const removeCast: Rule = {
@@ -23,7 +23,7 @@ export const removeCast: Rule = {
     }
 
     // Find all cast_expression nodes
-    const casts = fn.findAll({ rule: { kind: 'cast_expression' } }).filter((n) => !isInsideAsm(n));
+    const casts = findAllByKind(fn, 'cast_expression').filter((n) => !isInsideAsm(n));
 
     if (casts.length === 0) {
       return null;

@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const duplicateAssignment: Rule = {
@@ -23,7 +23,7 @@ export const duplicateAssignment: Rule = {
     }
 
     // Find expression_statement nodes containing assignment_expression
-    const exprStmts = fn.findAll({ rule: { kind: 'expression_statement' } });
+    const exprStmts = findAllByKind(fn, 'expression_statement');
     const candidates = exprStmts.filter((stmt) => {
       if (isInsideAsm(stmt)) {
         return false;

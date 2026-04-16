@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const CAST_TYPES = [
@@ -41,8 +41,8 @@ export const castExpr: Rule = {
     }
 
     // Find identifier and binary_expression nodes
-    const identifiers = fn.findAll({ rule: { kind: 'identifier' } });
-    const binaryExprs = fn.findAll({ rule: { kind: 'binary_expression' } });
+    const identifiers = findAllByKind(fn, 'identifier');
+    const binaryExprs = findAllByKind(fn, 'binary_expression');
     const candidates = [...identifiers, ...binaryExprs].filter((n) => {
       if (isInsideAsm(n)) {
         return false;

@@ -6,7 +6,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const pascalBoolNegate: Rule = {
@@ -24,15 +24,15 @@ export const pascalBoolNegate: Rule = {
     }
 
     // Find conditions in if and while statements
-    const ifNodes = fn.findAll({ rule: { kind: 'if' } });
-    const whileNodes = fn.findAll({ rule: { kind: 'while' } });
+    const ifNodes = findAllByKind(fn, 'if');
+    const whileNodes = findAllByKind(fn, 'while');
 
     // Collect condition expressions
     const conditions: { node: ReturnType<typeof fn.find>; isNot: boolean }[] = [];
 
     for (const node of [...ifNodes, ...whileNodes]) {
       // Find exprUnary with `not` directly in the condition
-      const unaryExprs = node.findAll({ rule: { kind: 'exprUnary' } }).filter((n) => {
+      const unaryExprs = findAllByKind(node, 'exprUnary').filter((n) => {
         const children = n.children();
         return children.length >= 2 && children[0]!.text().toLowerCase() === 'not';
       });
@@ -42,7 +42,7 @@ export const pascalBoolNegate: Rule = {
       }
 
       // Find exprBinary in conditions (for wrapping with double negation)
-      const binaryExprs = node.findAll({ rule: { kind: 'exprBinary' } });
+      const binaryExprs = findAllByKind(node, 'exprBinary');
       for (const expr of binaryExprs) {
         // Skip if parent is already a unary not
         const parent = expr.parent();

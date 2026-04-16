@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const C_TYPES = [
@@ -40,7 +40,7 @@ export const randomizeType: Rule = {
     }
 
     // Find all declaration nodes inside the function
-    const decls = fn.findAll({ rule: { kind: 'declaration' } });
+    const decls = findAllByKind(fn, 'declaration');
     if (decls.length === 0) {
       return null;
     }

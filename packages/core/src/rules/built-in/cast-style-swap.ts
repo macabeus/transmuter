@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const castStyleSwap: Rule = {
@@ -26,7 +26,7 @@ export const castStyleSwap: Rule = {
 
     if (direction === 'c-to-cpp') {
       // Find C-style cast_expression nodes like `(int)x`
-      const candidates = fn.findAll({ rule: { kind: 'cast_expression' } }).filter((n) => !isInsideAsm(n));
+      const candidates = findAllByKind(fn, 'cast_expression').filter((n) => !isInsideAsm(n));
 
       if (candidates.length === 0) {
         return null;
@@ -48,7 +48,7 @@ export const castStyleSwap: Rule = {
       };
     } else {
       // Find static_cast<T>(expr) call expressions
-      const candidates = fn.findAll({ rule: { kind: 'call_expression' } }).filter((n) => {
+      const candidates = findAllByKind(fn, 'call_expression').filter((n) => {
         if (isInsideAsm(n)) {
           return false;
         }

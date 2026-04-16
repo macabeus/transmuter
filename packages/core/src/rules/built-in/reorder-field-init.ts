@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, swapRanges } from '../helpers.js';
+import { findAllByKind, findTargetFunction, swapRanges } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const reorderFieldInit: Rule = {
@@ -21,7 +21,7 @@ export const reorderFieldInit: Rule = {
       return null;
     }
 
-    const initLists = fn.findAll({ rule: { kind: 'field_initializer_list' } });
+    const initLists = findAllByKind(fn, 'field_initializer_list');
     if (initLists.length === 0) {
       return null;
     }

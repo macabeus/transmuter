@@ -7,14 +7,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import {
-  type SimpleAssignment,
-  extractSimpleAssignment,
-  findTargetFunction,
-  getIndentation,
-  getStatements,
-  replaceRange,
-} from '../helpers.js';
+import { extractSimpleAssignment, findAllByKind, findTargetFunction, getIndentation, getStatements, replaceRange, type SimpleAssignment } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const longChainAssignment: Rule = {
@@ -32,7 +25,7 @@ export const longChainAssignment: Rule = {
     }
 
     // Find all compound_statement blocks
-    const blocks = fn.findAll({ rule: { kind: 'compound_statement' } });
+    const blocks = findAllByKind(fn, 'compound_statement');
     if (blocks.length === 0) {
       return null;
     }

@@ -11,7 +11,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 import { isPowerOf2, log2 } from '~/utils/math.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 interface ShiftCandidate {
@@ -36,7 +36,7 @@ export const factorShift: Rule = {
     const candidates: ShiftCandidate[] = [];
 
     // Find `a << N` where N is a small number literal (0-5)
-    const binaryExprs = fn.findAll({ rule: { kind: 'binary_expression' } });
+    const binaryExprs = findAllByKind(fn, 'binary_expression');
     for (const n of binaryExprs) {
       if (isInsideAsm(n)) {
         continue;

@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const MASKS = ['0xFF', '0xFFFF', '0xFFFFFFFF', '0x1', '0x7F', '0x3'];
@@ -24,7 +24,7 @@ export const addMask: Rule = {
     }
 
     // Find identifier nodes that are in expression contexts
-    const candidates = fn.findAll({ rule: { kind: 'identifier' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'identifier').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

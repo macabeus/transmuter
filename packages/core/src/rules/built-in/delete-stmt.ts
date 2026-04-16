@@ -9,7 +9,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getStatements, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getStatements, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const DELETABLE_KINDS = new Set([
@@ -36,7 +36,7 @@ export const deleteStmt: Rule = {
     }
 
     // Find all compound_statement blocks inside the function
-    const blocks = fn.findAll({ rule: { kind: 'compound_statement' } });
+    const blocks = findAllByKind(fn, 'compound_statement');
     if (blocks.length === 0) {
       return null;
     }

@@ -4,8 +4,6 @@
  * Score = instruction-level difference count between candidate and target.
  * Lower is better, 0 = perfect match.
  */
-import fs from 'fs/promises';
-import { fileURLToPath } from 'url';
 
 // objdiff-wasm types — imported dynamically to handle WASM loading
 type ObjdiffModule = typeof import('objdiff-wasm');
@@ -24,29 +22,9 @@ async function getObjdiffModule(): Promise<ObjdiffModule> {
 }
 
 async function initObjdiff(): Promise<ObjdiffModule> {
-  // Node's fetch doesn't resolve file:// URLs; Bun's does. Patch on Node only.
-  const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
-  const originalFetch = isBun ? null : globalThis.fetch;
-  if (!isBun) {
-    globalThis.fetch = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString();
-      if (url.includes('objdiff.core.wasm')) {
-        const buffer = await fs.readFile(fileURLToPath(url));
-        return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
-      }
-      return originalFetch!(input);
-    }) as typeof globalThis.fetch;
-  }
-
-  try {
-    const objdiff = await import('objdiff-wasm');
-    objdiff.init('error');
-    return objdiff;
-  } finally {
-    if (!isBun) {
-      globalThis.fetch = originalFetch!;
-    }
-  }
+  const objdiff = await import('objdiff-wasm');
+  objdiff.init('error');
+  return objdiff;
 }
 
 export class Scorer {

@@ -6,7 +6,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const xorZero: Rule = {
@@ -23,7 +23,7 @@ export const xorZero: Rule = {
     }
 
     // Find identifier nodes in expression contexts
-    const identifiers = fn.findAll({ rule: { kind: 'identifier' } }).filter((n) => {
+    const identifiers = findAllByKind(fn, 'identifier').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

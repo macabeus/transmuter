@@ -6,7 +6,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const voidCast: Rule = {
@@ -24,7 +24,7 @@ export const voidCast: Rule = {
     }
 
     // Find expression_statement nodes whose direct expression is a call_expression
-    const exprStmts = fn.findAll({ rule: { kind: 'expression_statement' } });
+    const exprStmts = findAllByKind(fn, 'expression_statement');
     const candidates = exprStmts.filter((stmt) => {
       if (isInsideAsm(stmt)) {
         return false;

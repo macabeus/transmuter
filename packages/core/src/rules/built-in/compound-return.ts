@@ -14,7 +14,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const COMPOUND_OPS = new Map([
@@ -118,7 +118,7 @@ export const compoundReturn: Rule = {
 
     const candidates: Candidate[] = [];
 
-    const returnStmts = fn.findAll({ rule: { kind: 'return_statement' } });
+    const returnStmts = findAllByKind(fn, 'return_statement');
     for (const ret of returnStmts) {
       if (isInsideAsm(ret)) {
         continue;

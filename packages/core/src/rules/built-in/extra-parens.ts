@@ -7,7 +7,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const extraParens: Rule = {
@@ -24,9 +24,9 @@ export const extraParens: Rule = {
     }
 
     // Find binary_expression, conditional_expression, and assignment_expression nodes
-    const binaryExprs = fn.findAll({ rule: { kind: 'binary_expression' } });
-    const conditionalExprs = fn.findAll({ rule: { kind: 'conditional_expression' } });
-    const assignmentExprs = fn.findAll({ rule: { kind: 'assignment_expression' } });
+    const binaryExprs = findAllByKind(fn, 'binary_expression');
+    const conditionalExprs = findAllByKind(fn, 'conditional_expression');
+    const assignmentExprs = findAllByKind(fn, 'assignment_expression');
     const candidates = [...binaryExprs, ...conditionalExprs, ...assignmentExprs].filter((n) => {
       if (isInsideAsm(n)) {
         return false;

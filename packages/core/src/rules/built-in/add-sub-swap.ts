@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const addSubSwap: Rule = {
@@ -23,7 +23,7 @@ export const addSubSwap: Rule = {
     }
 
     // Find subtraction candidates: `a - b`
-    const subCandidates = fn.findAll({ rule: { kind: 'binary_expression' } }).filter((n) => {
+    const subCandidates = findAllByKind(fn, 'binary_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }
@@ -35,7 +35,7 @@ export const addSubSwap: Rule = {
     });
 
     // Find addition-of-negation candidates: `a + (-b)`
-    const addNegCandidates = fn.findAll({ rule: { kind: 'binary_expression' } }).filter((n) => {
+    const addNegCandidates = findAllByKind(fn, 'binary_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

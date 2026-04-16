@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getDeclarations, getIndentation, getStatements, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getDeclarations, getIndentation, getStatements, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const selfAssignment: Rule = {
@@ -37,8 +37,8 @@ export const selfAssignment: Rule = {
     // Extract variable names from declarations
     const varNames: string[] = [];
     for (const decl of decls) {
-      const declarators = decl.findAll({ rule: { kind: 'init_declarator' } });
-      const plainDeclarators = decl.findAll({ rule: { kind: 'identifier' } });
+      const declarators = findAllByKind(decl, 'init_declarator');
+      const plainDeclarators = findAllByKind(decl, 'identifier');
       // init_declarator has an identifier child for initialized vars
       for (const d of declarators) {
         const ident = d.field('declarator');

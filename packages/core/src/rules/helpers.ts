@@ -5,11 +5,40 @@ import type { SgNode, SgRoot } from '@ast-grep/napi';
 import type { Language } from '~/language.js';
 
 /**
+ * Cache target-function lookups per (root, language, functionName).
+ *
+ * `#applyOne` runs up to MAX_ATTEMPTS rules against the same root/fnName, and
+ * the same source keeps appearing across iterations of a slot. Without this
+ * cache, every rule re-queries the AST for the target function — up to 10× per
+ * iteration, tens of thousands of times over a session.
+ *
+ * Keyed on the SgRoot object; parseCached hands out the same SgRoot instance
+ * for repeat source, so cache hits span iterations too.
+ */
+const targetFnCache = new WeakMap<SgRoot, Map<string, SgNode | null>>();
+
+/**
  * Find the target function's definition node in the AST.
  * Handles C, C++ (qualified names like Foo::bar), and Pascal.
  * Returns null if the function is not found.
  */
 export function findTargetFunction(root: SgRoot, functionName: string, language?: Language): SgNode | null {
+  let perRoot = targetFnCache.get(root);
+  if (!perRoot) {
+    perRoot = new Map();
+    targetFnCache.set(root, perRoot);
+  }
+  const key = `${language ?? 'c'}\0${functionName}`;
+  const hit = perRoot.get(key);
+  if (hit !== undefined || perRoot.has(key)) {
+    return hit ?? null;
+  }
+  const result = findTargetFunctionUncached(root, functionName, language);
+  perRoot.set(key, result);
+  return result;
+}
+
+function findTargetFunctionUncached(root: SgRoot, functionName: string, language?: Language): SgNode | null {
   if (language === 'pascal') {
     return findPascalFunction(root, functionName);
   }
@@ -45,6 +74,36 @@ export function findTargetFunction(root: SgRoot, functionName: string, language?
   }
 
   return null;
+}
+
+/**
+ * Cache `node.findAll({ rule: { kind } })` per (node, kind).
+ *
+ * Across up to MAX_ATTEMPTS rules in one `#applyOne` call, many rules ask for
+ * the same AST kinds (e.g. 10 rules all scan for `binary_expression`). Keyed
+ * on the SgNode object returned by `findTargetFunction` — since that call is
+ * itself cached, repeat rule attempts see the same node and hit this cache.
+ */
+const nodesByKindCache = new WeakMap<SgNode, Map<string, SgNode[]>>();
+
+/**
+ * Memoised `node.findAll({ rule: { kind } })`. Prefer this helper for simple
+ * kind-only queries; keep the direct ast-grep API for queries with regex,
+ * `has`, `inside`, or other matchers.
+ */
+export function findAllByKind(node: SgNode, kind: string): SgNode[] {
+  let perNode = nodesByKindCache.get(node);
+  if (!perNode) {
+    perNode = new Map();
+    nodesByKindCache.set(node, perNode);
+  }
+  const hit = perNode.get(kind);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const result = node.findAll({ rule: { kind } });
+  perNode.set(kind, result);
+  return result;
 }
 
 /**

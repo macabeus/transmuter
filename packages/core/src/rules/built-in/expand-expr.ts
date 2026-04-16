@@ -8,7 +8,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getStatements, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getStatements, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 /** Check if an expression is simple enough to inline. */
@@ -87,7 +87,7 @@ export const expandExpr: Rule = {
     }
 
     // Find all compound_statement blocks
-    const blocks = fn.findAll({ rule: { kind: 'compound_statement' } });
+    const blocks = findAllByKind(fn, 'compound_statement');
     if (blocks.length === 0) {
       return null;
     }
@@ -109,7 +109,7 @@ export const expandExpr: Rule = {
           const laterStmt = stmts[j]!;
 
           // Check if `var` is reassigned in this statement — if so, stop
-          const reassignCandidates = laterStmt.findAll({ rule: { kind: 'assignment_expression' } });
+          const reassignCandidates = findAllByKind(laterStmt, 'assignment_expression');
           const reassign = reassignCandidates.some((a) => {
             const left = a.field('left');
             return left && left.kind() === 'identifier' && left.text() === assignment.varName;

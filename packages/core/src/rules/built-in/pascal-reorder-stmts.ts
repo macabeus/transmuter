@@ -5,7 +5,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, swapRanges } from '../helpers.js';
+import { findAllByKind, findTargetFunction, swapRanges } from '../helpers.js';
 import { getPascalStatements } from '../pascal-helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
@@ -23,7 +23,7 @@ export const pascalReorderStmts: Rule = {
       return null;
     }
 
-    const blocks = fn.findAll({ rule: { kind: 'block' } });
+    const blocks = findAllByKind(fn, 'block');
     if (blocks.length === 0) {
       return null;
     }

@@ -6,7 +6,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const splitAssignment: Rule = {
@@ -24,7 +24,7 @@ export const splitAssignment: Rule = {
     }
 
     // Find assignment expressions where the RHS contains a field_expression chain
-    const candidates = fn.findAll({ rule: { kind: 'assignment_expression' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'assignment_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

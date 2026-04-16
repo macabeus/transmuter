@@ -5,7 +5,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 const SWAP_MAP: Record<string, string> = {
@@ -28,7 +28,7 @@ export const pascalIntrinsicSwap: Rule = {
       return null;
     }
 
-    const candidates = fn.findAll({ rule: { kind: 'exprCall' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'exprCall').filter((n) => {
       const funcNode = n.children()[0];
       if (!funcNode || funcNode.kind() !== 'identifier') {
         return false;

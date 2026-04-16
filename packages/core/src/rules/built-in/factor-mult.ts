@@ -7,7 +7,7 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const factorMult: Rule = {
@@ -25,7 +25,7 @@ export const factorMult: Rule = {
     }
 
     // Find binary_expression with '*' operator where right side is a number > 1
-    const candidates = fn.findAll({ rule: { kind: 'binary_expression' } }).filter((n) => {
+    const candidates = findAllByKind(fn, 'binary_expression').filter((n) => {
       if (isInsideAsm(n)) {
         return false;
       }

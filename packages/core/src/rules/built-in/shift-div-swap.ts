@@ -11,7 +11,7 @@ import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 import { isPowerOf2, log2 } from '~/utils/math.js';
 
-import { findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 interface Candidate {
@@ -37,7 +37,7 @@ export const shiftDivSwap: Rule = {
     const candidates: Candidate[] = [];
 
     // --- binary_expression candidates ---
-    const binaryExprs = fn.findAll({ rule: { kind: 'binary_expression' } });
+    const binaryExprs = findAllByKind(fn, 'binary_expression');
     for (const n of binaryExprs) {
       if (isInsideAsm(n)) {
         continue;
@@ -75,7 +75,7 @@ export const shiftDivSwap: Rule = {
     }
 
     // --- assignment_expression candidates ---
-    const assignExprs = fn.findAll({ rule: { kind: 'assignment_expression' } });
+    const assignExprs = findAllByKind(fn, 'assignment_expression');
     for (const n of assignExprs) {
       if (isInsideAsm(n)) {
         continue;

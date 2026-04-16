@@ -7,7 +7,7 @@
  */
 import type { MutationApplyResult } from '~/types.js';
 
-import { findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import { findAllByKind, findTargetFunction, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const commaExpr: Rule = {
@@ -24,8 +24,8 @@ export const commaExpr: Rule = {
     }
 
     // Find identifier and call_expression nodes in expression contexts
-    const identifiers = fn.findAll({ rule: { kind: 'identifier' } });
-    const callExprs = fn.findAll({ rule: { kind: 'call_expression' } });
+    const identifiers = findAllByKind(fn, 'identifier');
+    const callExprs = findAllByKind(fn, 'call_expression');
     const candidates = [...identifiers, ...callExprs].filter((n) => {
       if (isInsideAsm(n)) {
         return false;
