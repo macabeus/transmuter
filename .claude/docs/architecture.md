@@ -54,7 +54,7 @@ transmuter/
 │   │   │   ├── pipeline/
 │   │   │   │   ├── slot-orchestrator.ts # Manages concurrent slots
 │   │   │   │   ├── pool.ts             # Candidate graph + mutation target management
-│   │   │   │   └── deduplicator.ts     # Source hash deduplication (SHA-256)
+│   │   │   │   └── deduplicator.ts     # Source hash deduplication (Bun.hash / Wyhash)
 │   │   │   ├── rules/
 │   │   │   │   ├── rule.ts             # Rule interface (returns MutationApplyResult)
 │   │   │   │   ├── registry.ts         # Rule registry (register, enable, disable, weights)
@@ -149,27 +149,45 @@ transmuter/
 └── ARCHITECTURE.md                    # This document
 ```
 
+### Runtime
+
+Transmuter runs **only on [Bun](https://bun.com)** (pinned via `engines.bun: ">=1.3.12"` in every workspace `package.json`). Node.js is not supported — the code deliberately calls `Bun.spawn`, `Bun.file`, `Bun.hash`, `Bun.serve` etc. where it matters, and several Node-only shims (the `globalThis.fetch` monkey-patch for `file://` URLs, `@hono/node-server`, `http.request` in `ctl`) have been removed.
+
+Bun's relevance at specific hot spots:
+
+| Site | Bun API | Why |
+|------|---------|-----|
+| `Compiler.#exec` | `Bun.spawn` with fd stdio (`stdio: ['ignore', stdoutFd, stderrFd]`) | Wine/mwcc writes stderr through a pipe extremely slowly on macOS (~5 s per compile); fd stdio avoids this. See § 7 |
+| `Compiler` source write / obj read, `Scorer` object reads | `Bun.write` / `Bun.file(p).arrayBuffer()` | Faster I/O paths than `fs.promises` |
+| `Deduplicator.hash` | `Bun.hash(source).toString(36)` | Wyhash is ~10× faster than `crypto.createHash('sha256')` and dedup doesn't need a cryptographic hash |
+| `createControlServer` | `Bun.serve` | Native HTTP server; replaces `@hono/node-server` which had a hard Node dependency |
+| `ctl` HTTP client | `fetch()` | Native; replaces `http.request` |
+| objdiff-wasm loader | Bun's native `fetch` resolves `file://` URLs | The old `globalThis.fetch` monkey-patch is unnecessary and has been removed |
+
+Test runner: `bun --bun vitest run`. The `--bun` flag forces vitest's Node shebang to be ignored — plain `bun run vitest` would still launch a Node process and the `Bun.*` APIs would be undefined. Tests live alongside code (`*.spec.ts`) and run against real compilers.
+
 ### Build Configuration
 
-- **TypeScript:** strict mode, `strictNullChecks: true`, `noUncheckedIndexedAccess: true`
+- **TypeScript:** strict mode, `strictNullChecks: true`, `noUncheckedIndexedAccess: true`. `types: ["node", "bun"]` in `tsconfig.base.json` (`@types/bun` ships `Bun.*` and related globals).
 - **Module system:** ESM (`"type": "module"`)
 - **Build:** `tsup` for `@transmuter/core` (ESM output). `build:esm` script for fast dev builds (skips DTS). CLI has `predev` hook that auto-rebuilds core before running
+- **Dev scripts:** `bun run <entry>.ts` — Bun runs TypeScript natively, no `tsx`/`ts-node`
 - **Path aliases:** `~` -> `./src` within core package
-- **Workspace:** pnpm workspaces with `workspace:*` protocol
+- **Workspace:** pnpm workspaces with `workspace:*` protocol (pnpm stays as the package manager on top of Bun's runtime)
 
 ### Dependencies
 
 **@transmuter/core:**
-- `@ast-grep/napi` — AST parsing and pattern matching
-- `tree-sitter-c` — C grammar
+- `@ast-grep/napi` — AST parsing and pattern matching (NAPI; Bun loads prebuild `.node` binaries the same way Node does)
+- `tree-sitter-c` — C grammar (prebuild `.node` loaded via `createRequire` + `require.resolve`)
 - `@ast-grep/lang-cpp` — C++ grammar (official ast-grep package with platform-specific binaries)
-- `tree-sitter-pascal` — Pascal/Delphi/FreePascal grammar (Isopod/tree-sitter-pascal)
+- `tree-sitter-pascal` — Pascal/Delphi/FreePascal grammar (Isopod/tree-sitter-pascal; built locally via node-gyp)
 - `objdiff-wasm` — assembly diffing and scoring
 - `diff` — unified diff generation for reports
 
 **@transmuter/cli:**
 - `@transmuter/core`
-- `hono` + `@hono/node-server` — HTTP control server
+- `hono` — HTTP routing (mounted via `Bun.serve`, no Node adapter)
 - `ink` + `react` — terminal UI rendering
 - `ink-spinner` — spinner component
 - `yaml` — decomp.yaml parsing
@@ -217,6 +235,16 @@ Step 7 uses `scoreWithAssembly()` which returns an `AssemblyScoreResult` contain
 
 The `Compiler` class writes source to temp files with language-appropriate extensions (`.c`, `.cpp`, `.pas`) so that compiler drivers like IDO's `cc`/`NCC` can select the correct frontend based on the file extension.
 
+#### Compiler stdio: fd-to-tempfile, not pipes (load-bearing)
+
+`Compiler.#exec` routes child stdout and stderr through **file descriptors opened on temp files**, not through the subprocess's built-in pipes. This is not cosmetic — it's a workaround for an OS-level stall:
+
+- Wine's stderr, when connected to a pipe from Bun/Node, stalls for ~5 s per compile on macOS (specifically `mwcceppc` + Wine Crossover; likely a pipe-buffering / small-write pattern interaction). The same compile with stderr redirected to a file completes in ~0.6 s.
+- Switching `Bun.spawn` to `stdio: ['ignore', 'pipe', 'pipe']` reproduces the stall (throughput drops from ~6.9 compiles/s to ~1.2 compiles/s at 8-parallel) — confirming it's a pipe-vs-fd problem at the OS/Wine layer, not a Node-vs-Bun one.
+- The fd approach: `openSync(path, 'w')` → pass fd in `stdio[1/2]` → `closeSync` after exit → read the file back (capped at 50 KB via `readTruncated` which uses `Bun.file(p).slice(0, 50_000).arrayBuffer()`).
+
+`#exec` also sets `detached: true` on `Bun.spawn`, which puts the shell in its own process group. On abort, `process.kill(-proc.pid, 'SIGTERM')` signals the entire group so that grandchildren spawned from `sh -c '... && ...'` (e.g., `cpp | cc | as` pipelines) die with the shell.
+
 ### Candidate Graph Model
 
 The pool manages a **candidate graph** — a tree of `CandidateNode`s connected by `parentId` pointers:
@@ -246,7 +274,9 @@ Both strategies are **self-stabilizing**: pruning shrinks the pool, which raises
 
 ### Concurrency Model
 
-Single-thread async. The bottleneck is compilation (~60% of wall time), which runs as subprocesses — inherently parallel. N compilations run concurrently via `Promise.allSettled`. Slot count defaults to `Math.min(os.cpus().length, 4)`.
+Single-thread async. The bottleneck is compilation — a Wine/mwcc or native compiler subprocess that runs outside Bun's event loop and is inherently parallel. N compilations run concurrently via `Promise.allSettled`. Slot count defaults to `Math.min(os.cpus().length, 4)`.
+
+Bun Workers are **not used today**. After the Bun migration the compile phase occupies ~99 % of the CPU budget at `c=8` on the reference Melee/Wine workload (pinned by the Wine+mwcc ceiling), while mutate + score + dedup + report together sit at < 1 %. Moving JS-side work into worker threads for true parallelism is only worth doing on workloads where compile is not the dominant phase — e.g., a native (non-Wine) toolchain, or if mutation/scoring grows in cost. The worker-pool design (Seam B: mutate + compile in worker, score + report on main) is documented in `BUN_MIGRATION_PLAN.md` but deliberately not implemented.
 
 ---
 
@@ -362,7 +392,16 @@ Selects rules via a two-layer filtering and selection process:
 1. **Diff-type affinity filter**: Rules that declare `relevantDiffTypes` are excluded when none of their declared types remain in the target candidate's `DiffBreakdown`. Rules without `relevantDiffTypes` are always eligible.
 2. **Adaptive selection**: Per-target Thompson Sampling selects from eligible rules, learning which rules are effective for each mutation target.
 
-Rules are also **filtered by the session language**. If a selected rule returns null, tries another (up to 10 attempts). When `depth > 1`, chains multiple mutations. The location from the last applied rule is returned.
+Rules are also **filtered by the session language**. If a selected rule returns null, tries another (up to `MAX_ATTEMPTS = 10`). When `depth > 1`, chains multiple mutations. The location from the last applied rule is returned.
+
+### AST-Traversal Caching (`rules/helpers.ts`)
+
+Within one `#applyOne` call up to 10 rules are tried against the same source, each typically calling `findTargetFunction(root, fnName)` and `fn.findAll({ rule: { kind: 'X' } })`. Naively, this re-walks the AST across the NAPI bridge up to 10× per iteration. Two WeakMap-backed caches eliminate the redundancy:
+
+- **`findTargetFunction`** memoises via `WeakMap<SgRoot, Map<string, SgNode|null>>` keyed on `(language, functionName)`. Since `parseCached` in `parser.ts` hands out the same `SgRoot` instance across iterations that share a source, the cache also hits across iterations — a slot that runs 30 attempts against the same head candidate pays for the function lookup exactly once.
+- **`findAllByKind(node, kind)`** memoises via `WeakMap<SgNode, Map<string, SgNode[]>>`. Called on the (cached) target function node, so rule-to-rule cache hits are guaranteed when rules ask for the same AST kind. Rules with simple kind-only queries use this helper; rules with compound matchers (`has:`, `regex:`, nested queries) still use `node.findAll(...)` directly.
+
+Impact: at the reference c=8 benchmark, mutate-phase CPU drops from ~55 s → ~4 s per 8-slot × 90 s window (~14× reduction; `ruleApply` alone drops ~17×). The saving is invisible in top-line iter/s on the Wine/mwcc workload because compile is already the ceiling (moves from 90 % → 99 % of CPU budget), but it unlocks headroom for higher concurrency, richer mutations, and future worker-based parallelism.
 
 ### Built-In Rules (49 total)
 
@@ -865,7 +904,7 @@ Use the `GET /` to consult the API schema. It varies per session type (match vs 
 
 ### Architecture
 
-The HTTP server runs in the same Node.js process and event loop as the MutationSearch and Ink dashboard. It shares direct references to the `MutationSearch` and `SessionStore` instances — no IPC, serialization, or separate process. All handlers are thin wrappers around existing methods. Built with [Hono](https://hono.dev/) + `@hono/node-server`.
+The HTTP server runs in the same Bun process and event loop as the MutationSearch and Ink dashboard. It shares direct references to the `MutationSearch` and `SessionStore` instances — no IPC, serialization, or separate process. All handlers are thin wrappers around existing methods. Built with [Hono](https://hono.dev/) mounted on `Bun.serve` (no Node adapter). The `ctl` client is a small wrapper around the native `fetch`.
 
 ```
 ┌───────────────────────────────────────────────────┐
@@ -956,7 +995,7 @@ Two layers wrap objdiff-wasm:
 - `getAssemblyFromSymbol(objDiff, name)` — convert instruction rows to readable assembly text
 - `getDifferences(leftDiff, rightDiff, name)` — detailed categorized differences (INSERTION, DELETION, REPLACEMENT, OPCODE_MISMATCH, ARGUMENT_MISMATCH), also available as `structuredDifferences` with per-type counts
 
-WASM module is lazily loaded once per process via a shared singleton. Node.js `fetch` is patched temporarily during initialization to handle `file://` URLs for the `.wasm` file.
+WASM module is lazily loaded once per process via a shared singleton. Bun's native `fetch` resolves `file://` URLs directly, so the loader is a plain `await import('objdiff-wasm')` — no monkey-patch required. (Historical note: Bun ≤ 1.2.19 additionally lacked `WebAssembly.compileStreaming`, which `objdiff-wasm`'s loader relies on via a `.then(WebAssembly.compileStreaming)` chain; Bun 1.3.12 ships it natively, so the former polyfill has also been removed.)
 
 **`Scorer`** (`scoring/scorer.ts`) — higher-level class for the pipeline. Parses the target object once on `init()` and caches it. Provides:
 - `score(candidateObjPath)` — returns numeric difference count
