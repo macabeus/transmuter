@@ -32,18 +32,24 @@ Main features:
 git submodule add https://github.com/macabeus/transmuter.git tools/transmuter
 ```
 
-2. Build Transmuter. It's recommended to write a shell script to handle this and push it into your repository:
+2. Build Transmuter. Transmuter runs on [Bun](https://bun.com) (≥ 1.3.12) and uses `pnpm` as its workspace manager. It's recommended to write a shell script to handle setup and push it into your repository:
 
 ```bash
 echo "Initializing tools submodules..."
 git submodule update --init
 
-if ! command -v pnpm &> /dev/null; then
-  echo "[tools/transmuter] pnpm not found, installing globally..."
-  npm install -g pnpm
+if ! command -v bun &> /dev/null; then
+  echo "[tools/transmuter] bun not found, installing..."
+  curl -fsSL https://bun.com/install | bash
+  export PATH="$HOME/.bun/bin:$PATH"
 fi
 
-echo "[tools/transmuter] Installing npm dependencies..."
+if ! command -v pnpm &> /dev/null; then
+  echo "[tools/transmuter] pnpm not found, installing globally..."
+  bun install -g pnpm
+fi
+
+echo "[tools/transmuter] Installing dependencies..."
 cd tools/transmuter
 pnpm install
 
@@ -53,13 +59,13 @@ pnpm run build
 echo "[tools/transmuter] Done!"
 ```
 
-3. Invoke Transmuter directly via Node. The build produces a CLI entry at `tools/transmuter/packages/cli/dist/index.js`; run it with:
+3. Invoke Transmuter via `bun`. The build produces a CLI entry at `tools/transmuter/packages/cli/dist/index.js`; run it with:
 
 ```bash
-node tools/transmuter/packages/cli/dist/index.js match ...
+bun tools/transmuter/packages/cli/dist/index.js match ...
 ```
 
-The rest of this README writes `transmuter ...` for brevity. Substitute `node tools/transmuter/packages/cli/dist/index.js ...` when you run it.
+The rest of this README writes `transmuter ...` for brevity. Substitute `bun tools/transmuter/packages/cli/dist/index.js ...` when you run it.
 
 4. Add a `tools.transmuter` section to your [`decomp.yaml`](https://github.com/ethteck/decomp_settings) with the compiler command and optional flags. Example for a GBA project using `agbcc`:
 
@@ -426,7 +432,7 @@ tools:
 1. **Parse** the source with [ast-grep](https://ast-grep.github.io/) (tree-sitter under the hood — grammar selected by language)
 2. **Select** a branch from the pool (fitness-proportional: lower score = higher selection probability, with 10% random exploration)
 3. **Mutate** by picking a rule (filtered by diff-type affinity, then selected via per-target Thompson Sampling) and applying it to the AST
-4. **Deduplicate** via SHA-256 hash — skip if an identical source was already compiled
+4. **Deduplicate** via a content hash — skip if an identical source was already compiled
 5. **Compile** via the user's compiler command (runs as a subprocess)
 6. **Score** using [objdiff](https://github.com/encounter/objdiff) — count instruction-level differences against the target
 7. **Update** the pool: if the score improved, the branch adopts the new code
