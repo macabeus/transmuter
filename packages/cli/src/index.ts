@@ -30,7 +30,7 @@ Match Options:
   --compiler <cmd>     Compiler command template
   --cwd <path>         Working directory for compiler
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
-  --concurrency <n>    Number of concurrent slots
+  --concurrency <n>    Number of concurrent slots (default: min(cpus, 4))
   --max-iterations <n> Maximum iterations
   --timeout <ms>       Maximum time in milliseconds
   --seed <n>           RNG seed for reproducibility
@@ -52,7 +52,7 @@ Refine Options:
   --guideline <id>     Guideline to apply (omit to list available)
   --cwd <path>         Working directory for compiler
   --profile <id>       Compiler profile
-  --concurrency <n>    Total concurrent slots
+  --concurrency <n>    Total concurrent slots (default: min(cpus, 4))
   --max-iterations <n> Max iterations per violation (default: unlimited)
   --timeout <ms>       Max time per violation in ms (default: unlimited)
   --seed <n>           RNG seed for reproducibility

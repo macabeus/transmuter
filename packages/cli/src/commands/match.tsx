@@ -19,6 +19,7 @@ import {
 import fs from 'fs/promises';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
+import os from 'os';
 import path from 'path';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -403,7 +404,12 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         }
 
         const seed = args.seed ?? Math.floor(Math.random() * 0xffffffff);
-        const concurrency = args.concurrency ?? transmuterConfig?.concurrency;
+        const rawConcurrency = args.concurrency ?? transmuterConfig?.concurrency;
+        if (rawConcurrency !== undefined && (!Number.isFinite(rawConcurrency) || rawConcurrency < 1)) {
+          console.error(`Error: --concurrency must be a positive integer (got ${rawConcurrency}).`);
+          process.exit(1);
+        }
+        const concurrency = rawConcurrency ?? Math.min(os.cpus().length, 4);
         const maxIterations = args.maxIterations ?? transmuterConfig?.maxIterations;
         const timeoutMs = args.timeout ?? transmuterConfig?.timeoutMs;
         const mutationDepth = args.depth ?? transmuterConfig?.mutationDepth;
@@ -423,7 +429,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           compilerCommand,
           language,
           profile: resolvedProfile,
-          concurrency: concurrency ?? 0,
+          concurrency,
           maxIterations: maxIterations ?? Infinity,
           timeoutMs: timeoutMs ?? Infinity,
           seed,

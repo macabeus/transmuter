@@ -17,6 +17,7 @@ import {
 import fs from 'fs/promises';
 import { Box, Text, render, useApp } from 'ink';
 import Spinner from 'ink-spinner';
+import os from 'os';
 import path from 'path';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -606,6 +607,13 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
 
         const seed = args.seed ?? Math.floor(Math.random() * 0xffffffff);
 
+        const rawConcurrency = args.concurrency ?? transmuterConfig?.concurrency;
+        if (rawConcurrency !== undefined && (!Number.isFinite(rawConcurrency) || rawConcurrency < 1)) {
+          console.error(`Error: --concurrency must be a positive integer (got ${rawConcurrency}).`);
+          process.exit(1);
+        }
+        const concurrency = rawConcurrency ?? Math.min(os.cpus().length, 4);
+
         const refiner = new Refiner({
           source,
           language,
@@ -616,7 +624,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
           sourcePrefix: args.sourcePrefix,
           profile: args.profile ?? transmuterConfig?.profile,
           guidelineId: args.guideline!,
-          concurrency: args.concurrency ?? transmuterConfig?.concurrency,
+          concurrency,
           maxIterationsPerViolation: args.maxIterations ?? transmuterConfig?.maxIterations,
           timeoutMsPerViolation: args.timeout ?? transmuterConfig?.timeoutMs,
           seed,
