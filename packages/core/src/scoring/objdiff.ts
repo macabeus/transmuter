@@ -35,24 +35,28 @@ export class Objdiff {
   }
 
   static async #initializeObjdiff(): Promise<ObjdiffModule> {
-    // Node.js fetch doesn't support file:// URLs, so we patch it temporarily
-    // to load local files when objdiff-wasm requests them during initialization
-    const originalFetch = global.fetch;
-    global.fetch = async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString();
-      if (url.includes('objdiff.core.wasm')) {
-        const buffer = await fs.readFile(fileURLToPath(url));
-        return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
-      }
-      return originalFetch(input);
-    };
+    // Node's fetch doesn't resolve file:// URLs; Bun's does. Patch on Node only.
+    const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
+    const originalFetch = isBun ? null : global.fetch;
+    if (!isBun) {
+      global.fetch = (async (input: string | URL | Request): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes('objdiff.core.wasm')) {
+          const buffer = await fs.readFile(fileURLToPath(url));
+          return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
+        }
+        return originalFetch!(input);
+      }) as typeof global.fetch;
+    }
 
     try {
       const objdiff = await import('objdiff-wasm');
       objdiff.init('error');
       return objdiff;
     } finally {
-      global.fetch = originalFetch;
+      if (!isBun) {
+        global.fetch = originalFetch!;
+      }
     }
   }
 

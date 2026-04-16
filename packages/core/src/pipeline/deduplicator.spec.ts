@@ -41,10 +41,12 @@ describe('Deduplicator', () => {
     expect(dedup.checkAndAdd('x')).toBe(false);
   });
 
-  it('hash() is deterministic', () => {
+  it('hash() is deterministic and distinguishes distinct inputs', () => {
     const h1 = Deduplicator.hash('hello world');
     const h2 = Deduplicator.hash('hello world');
+    const h3 = Deduplicator.hash('hello worlq');
     expect(h1).toBe(h2);
-    expect(h1).toHaveLength(64); // SHA-256 hex
+    expect(h1).not.toBe(h3);
+    expect(h1.length).toBeGreaterThan(0);
   });
 });

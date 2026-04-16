@@ -1,7 +1,7 @@
 /**
  * Source hash deduplicator.
  *
- * Tracks SHA-256 hashes of mutation outputs to avoid reprocessing duplicates.
+ * Tracks Wyhash digests of mutation outputs to avoid reprocessing duplicates.
  * Uses an LRU-style eviction when the cap is reached.
  *
  * Scope: one instance per `MutationSearch` session, shared across all slots in
@@ -10,7 +10,6 @@
  * source rejected (or scored badly) in one session may be valid in another.
  * Sharing dedup state across sessions would silently skip valid candidates.
  */
-import { createHash } from 'crypto';
 
 /** Default maximum number of hashes to track. */
 const DEFAULT_MAX_SIZE = 200_000;
@@ -26,9 +25,9 @@ export class Deduplicator {
     this.#maxSize = maxSize;
   }
 
-  /** Compute SHA-256 hash of source code. */
+  /** Compute a non-cryptographic content hash of source code. */
   static hash(source: string): string {
-    return createHash('sha256').update(source).digest('hex');
+    return Bun.hash(source).toString(36);
   }
 
   /** Mark a hash as seen. Evicts oldest entry if at capacity. */

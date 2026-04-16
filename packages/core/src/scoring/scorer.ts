@@ -24,23 +24,28 @@ async function getObjdiffModule(): Promise<ObjdiffModule> {
 }
 
 async function initObjdiff(): Promise<ObjdiffModule> {
-  // Node.js fetch doesn't support file:// URLs — patch temporarily for WASM loading
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
-    const url = input.toString();
-    if (url.includes('objdiff.core.wasm')) {
-      const buffer = await fs.readFile(fileURLToPath(url));
-      return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
-    }
-    return originalFetch(input);
-  };
+  // Node's fetch doesn't resolve file:// URLs; Bun's does. Patch on Node only.
+  const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
+  const originalFetch = isBun ? null : globalThis.fetch;
+  if (!isBun) {
+    globalThis.fetch = (async (input: string | URL | Request): Promise<Response> => {
+      const url = input.toString();
+      if (url.includes('objdiff.core.wasm')) {
+        const buffer = await fs.readFile(fileURLToPath(url));
+        return new Response(buffer, { headers: { 'content-type': 'application/wasm' } });
+      }
+      return originalFetch!(input);
+    }) as typeof globalThis.fetch;
+  }
 
   try {
     const objdiff = await import('objdiff-wasm');
     objdiff.init('error');
     return objdiff;
   } finally {
-    globalThis.fetch = originalFetch;
+    if (!isBun) {
+      globalThis.fetch = originalFetch!;
+    }
   }
 }
 
@@ -67,7 +72,7 @@ export class Scorer {
       this.#diffConfig.setProperty(key, value);
     }
 
-    const targetBuffer = await fs.readFile(this.#targetObjectPath);
+    const targetBuffer = await Bun.file(this.#targetObjectPath).arrayBuffer();
     this.#targetObj = this.#objdiff.diff.Object.parse(new Uint8Array(targetBuffer), this.#diffConfig, 'target');
   }
 
@@ -81,7 +86,7 @@ export class Scorer {
       throw new Error('Scorer not initialized — call init() first');
     }
 
-    const candidateBuffer = await fs.readFile(candidateObjPath);
+    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
     const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
 
     const mappingConfig = {
@@ -109,7 +114,7 @@ export class Scorer {
       throw new Error('Scorer not initialized — call init() first');
     }
 
-    const candidateBuffer = await fs.readFile(candidateObjPath);
+    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
     const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
 
     const mappingConfig = {
@@ -174,7 +179,7 @@ export class Scorer {
       throw new Error('Scorer not initialized — call init() first');
     }
 
-    const candidateBuffer = await fs.readFile(candidateObjPath);
+    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
     const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
 
     const mappingConfig = {

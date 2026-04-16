@@ -7,7 +7,6 @@
  *
  * The server writes a discovery file so external processes can find the port.
  */
-import { serve } from '@hono/node-server';
 import { extractFunctionDefinition } from '@transmuter/core';
 import type {
   ActiveSubSession,
@@ -26,7 +25,6 @@ import type {
 import fs from 'fs/promises';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import type { Server } from 'http';
 import path from 'path';
 
 export interface ControlServerOptions {
@@ -1292,16 +1290,13 @@ export function createCleanupApp(cleanup: Cleanup): Hono {
 export async function createControlServer(options: ControlServerOptions): Promise<ControlServer> {
   const { app, discoveryDir, sessionId, port: requestedPort } = options;
 
-  const server = await new Promise<Server>((resolve) => {
-    const s = serve({ fetch: app.fetch, port: requestedPort ?? 0, hostname: '127.0.0.1' }, () =>
-      resolve(s as unknown as Server),
-    );
+  const server = Bun.serve({
+    fetch: app.fetch,
+    port: requestedPort ?? 0,
+    hostname: '127.0.0.1',
   });
+  const actualPort = server.port;
 
-  const addr = server.address();
-  const actualPort = typeof addr === 'object' && addr !== null ? addr.port : (requestedPort ?? 0);
-
-  // Write discovery file
   const discoveryPath = path.join(discoveryDir, 'transmuter-control.json');
   const discovery: DiscoveryFile = {
     pid: process.pid,
@@ -1312,7 +1307,7 @@ export async function createControlServer(options: ControlServerOptions): Promis
   await fs.writeFile(discoveryPath, JSON.stringify(discovery, null, 2));
 
   async function close(): Promise<void> {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await server.stop();
     try {
       await fs.unlink(discoveryPath);
     } catch {
