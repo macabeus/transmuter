@@ -91,6 +91,38 @@ module.exports = {
       to: { path: '^src/pipeline/' },
     },
 
+    // ── Worker / main-thread boundary ───────────────────────
+    // slot-worker.ts runs inside a Bun Worker thread; the orchestrator loads it
+    // by URL, never by static import. `worker-protocol.ts` is the only module
+    // allowed to be shared across the boundary (type-only).
+    {
+      name: 'worker-no-main-thread-imports',
+      severity: 'error',
+      comment:
+        'slot-worker.ts runs in a Worker thread and must not depend on main-only modules (Pool, SessionStore, MutationSearch, the orchestrator itself, refiner/cleanup/reducer, isolate, or the public index barrel).',
+      from: { path: '^src/search/slot-worker\\.ts$' },
+      to: {
+        path: [
+          '^src/pipeline/pool\\.ts$',
+          '^src/session/',
+          '^src/refiner/',
+          '^src/cleanup/',
+          '^src/reducer/',
+          '^src/isolate/',
+          '^src/search/(mutation-search|slot-orchestrator|auto-compact)\\.ts$',
+          '^src/index\\.ts$',
+        ].join('|'),
+      },
+    },
+    {
+      name: 'slot-worker-is-entry-point-only',
+      severity: 'error',
+      comment:
+        'slot-worker.ts is a Worker entry point loaded by URL — nothing in main-thread code should import it statically (doing so would pull its runtime into the main bundle and defeat the boundary).',
+      from: {},
+      to: { path: '^src/search/slot-worker\\.ts$' },
+    },
+
     // ── Orchestration isolation ─────────────────────────────
     {
       name: 'reducer-no-search-dep',
