@@ -45,7 +45,7 @@ run_fixture() {
   echo ""
   echo "━━━ $name ━━━"
   echo ""
-  pnpm tsx "$full_path"
+  bun run "$full_path"
 }
 
 # Skip leading "--" if present (pnpm passes it when using `pnpm run test:fixture -- --name`)

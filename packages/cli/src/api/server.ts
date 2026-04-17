@@ -1295,7 +1295,7 @@ export async function createControlServer(options: ControlServerOptions): Promis
     port: requestedPort ?? 0,
     hostname: '127.0.0.1',
   });
-  const actualPort = server.port;
+  const actualPort = server.port!;
 
   const discoveryPath = path.join(discoveryDir, 'transmuter-control.json');
   const discovery: DiscoveryFile = {

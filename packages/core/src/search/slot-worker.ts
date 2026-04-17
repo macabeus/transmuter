@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 /**
  * Slot worker entry point. Runs the mutate → dedup → compile → score pipeline
  * for one slot in its own Bun Worker thread. Main thread is the SlotOrchestrator;

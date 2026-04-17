@@ -23,6 +23,7 @@ import type {
   WorkerInit,
   WorkerJob,
   WorkerOutbound,
+  WorkerResult,
 } from './worker-protocol.js';
 
 const FIXTURE_DIR = new URL('../../../../test-fixture/entity-item-drop/', import.meta.url).pathname;
@@ -134,7 +135,7 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
       send(job);
 
       const result = await waitFor(
-        (m): m is Extract<WorkerOutbound, { jobId?: number }> =>
+        (m): m is WorkerResult =>
           (m.kind === 'scored' ||
             m.kind === 'compile-error' ||
             m.kind === 'dedup' ||
@@ -155,7 +156,7 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
         expect(result.assembly.length).toBeGreaterThan(0);
         expect(result.timings.compile).toBeGreaterThan(0);
         expect(result.timings.score).toBeGreaterThan(0);
-      } else {
+      } else if (result.kind === 'compile-error') {
         expect(result.timings.compile).toBeGreaterThan(0);
       }
 

@@ -11,7 +11,7 @@ export interface CliState {
   bestScore: number;
   iteration: number;
   elapsed: number;
-  targets: MutationTargetSummary[];
+  targets: readonly MutationTargetSummary[];
   candidateCount: number;
   forkCount: number;
   compiled: number;
