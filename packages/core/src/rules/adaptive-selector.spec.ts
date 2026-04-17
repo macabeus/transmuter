@@ -328,4 +328,67 @@ describe('AdaptiveSelector', () => {
       expect(ruleB.successRate).toBe(0);
     });
   });
+
+  describe('serialize / restore', () => {
+    it('round-trips an empty selector', () => {
+      const a = new AdaptiveSelector({ windowSize: 50 });
+      const b = new AdaptiveSelector();
+      b.restore(a.serialize());
+      expect(b.getStats('anything')).toEqual([]);
+    });
+
+    it('round-trips recorded stats', () => {
+      const a = new AdaptiveSelector({ windowSize: 20 });
+      for (let i = 0; i < 5; i++) a.record('t1', 'rule-a', i % 2 === 0);
+      for (let i = 0; i < 3; i++) a.record('t1', 'rule-b', false);
+      for (let i = 0; i < 7; i++) a.record('t2', 'rule-a', true);
+
+      const b = new AdaptiveSelector();
+      b.restore(a.serialize());
+
+      const t1Stats = b.getStats('t1').sort((x, y) => x.ruleId.localeCompare(y.ruleId));
+      expect(t1Stats).toEqual([
+        { ruleId: 'rule-a', trials: 5, successRate: 3 / 5 },
+        { ruleId: 'rule-b', trials: 3, successRate: 0 },
+      ]);
+      const t2Stats = b.getStats('t2');
+      expect(t2Stats).toEqual([{ ruleId: 'rule-a', trials: 7, successRate: 1 }]);
+    });
+
+    it('preserves window eviction state across round-trip', () => {
+      const a = new AdaptiveSelector({ windowSize: 3 });
+      a.record('t', 'r', false);
+      a.record('t', 'r', false);
+      a.record('t', 'r', true);
+      a.record('t', 'r', true);
+      a.record('t', 'r', true);
+
+      const b = new AdaptiveSelector();
+      b.restore(a.serialize());
+
+      // Record one more on b: should evict the oldest in-window value (a true).
+      b.record('t', 'r', false);
+      const statsAfter = b.getStats('t')[0]!;
+      expect(statsAfter.trials).toBe(3);
+      expect(statsAfter.successRate).toBeCloseTo(2 / 3);
+    });
+
+    it('replaces existing state on restore', () => {
+      const a = new AdaptiveSelector();
+      a.record('t', 'r', true);
+
+      const b = new AdaptiveSelector();
+      b.record('other-t', 'other-r', false);
+      b.restore(a.serialize());
+
+      expect(b.getStats('other-t')).toEqual([]);
+      expect(b.getStats('t')).toHaveLength(1);
+    });
+
+    it('rejects an unknown snapshot version', () => {
+      const bad = new TextEncoder().encode(JSON.stringify({ version: 99, windowSize: 10, targets: [] }));
+      const s = new AdaptiveSelector();
+      expect(() => s.restore(bad)).toThrow(/unsupported snapshot version/);
+    });
+  });
 });

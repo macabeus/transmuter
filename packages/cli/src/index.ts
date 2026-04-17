@@ -31,9 +31,11 @@ Match Options:
   --cwd <path>         Working directory for compiler
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
   --concurrency <n>    Number of concurrent slots (default: min(cpus, 4))
+                       Each slot runs in its own Bun Worker thread
   --max-iterations <n> Maximum iterations
   --timeout <ms>       Maximum time in milliseconds
-  --seed <n>           RNG seed for reproducibility
+  --seed <n>           RNG seed for reproducibility (use with --concurrency 1
+                       and --max-iterations for bit-identical runs)
   --no-reduce          Skip source reduction before permuting
   --isolate            Strip non-target, non-inline function bodies and
                        #defines before reduce/match — useful on preprocessed

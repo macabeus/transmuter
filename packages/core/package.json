@@ -8,6 +8,9 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./slot-worker": {
+      "import": "./dist/search/slot-worker.js"
     }
   },
   "files": [

@@ -52,9 +52,14 @@ transmuter/
 │   │   │   ├── types.ts                # All shared types
 │   │   │   ├── language.ts             # Language type, detection, EXTENSION_MAP
 │   │   │   ├── pipeline/
-│   │   │   │   ├── slot-orchestrator.ts # Manages concurrent slots
 │   │   │   │   ├── pool.ts             # Candidate graph + mutation target management
 │   │   │   │   └── deduplicator.ts     # Source hash deduplication (Bun.hash / Wyhash)
+│   │   │   ├── search/
+│   │   │   │   ├── mutation-search.ts  # Top-level search entry
+│   │   │   │   ├── slot-orchestrator.ts# Spawns N worker threads, dispatches jobs, collects results
+│   │   │   │   ├── worker-protocol.ts  # Typed init/job/result/event envelopes for workers
+│   │   │   │   ├── slot-worker.ts      # Worker entry: full mutate→dedup→compile→score per job
+│   │   │   │   └── auto-compact.ts     # Population/staleness pruning policy
 │   │   │   ├── rules/
 │   │   │   │   ├── rule.ts             # Rule interface (returns MutationApplyResult)
 │   │   │   │   ├── registry.ts         # Rule registry (register, enable, disable, weights)
@@ -274,9 +279,24 @@ Both strategies are **self-stabilizing**: pruning shrinks the pool, which raises
 
 ### Concurrency Model
 
-Single-thread async. The bottleneck is compilation — a Wine/mwcc or native compiler subprocess that runs outside Bun's event loop and is inherently parallel. N compilations run concurrently via `Promise.allSettled`. Slot count defaults to `Math.min(os.cpus().length, 4)`.
+`SlotOrchestrator` spawns N Bun Workers (threads), each running the **full mutate → dedup → compile → score pipeline** in its own JS VM. Main thread owns the `Pool`, the authoritative `AdaptiveSelector`, event emission, and the HTTP API; workers receive jobs from main and reply with one of `no-mutation` / `dedup` / `compile-error` / `scored`. Worker count comes from `opts.concurrency` (default: `min(os.cpus().length, 4)`).
 
-Bun Workers are **not used today**. After the Bun migration the compile phase occupies ~99 % of the CPU budget at `c=8` on the reference Melee/Wine workload (pinned by the Wine+mwcc ceiling), while mutate + score + dedup + report together sit at < 1 %. Moving JS-side work into worker threads for true parallelism is only worth doing on workloads where compile is not the dominant phase — e.g., a native (non-Wine) toolchain, or if mutation/scoring grows in cost. The worker-pool design (Seam B: mutate + compile in worker, score + report on main) is documented in `BUN_MIGRATION_PLAN.md` but deliberately not implemented.
+Each worker owns its own `Compiler`, `Scorer`, `Deduplicator`, `MutationEngine`, and forked `Rng` (derived deterministically from base seed and slot id). `AdaptiveSelector` snapshots are rebroadcast from main every N results (default 100) to keep Thompson stats synchronized across workers; the broadcast is **skipped entirely when `concurrency === 1`** since main's authoritative copy and the single worker's local copy stay in lockstep through the per-result record path. Dedup set is per-worker (cross-worker duplicates cost one wasted compile per collision but don't require a shared set).
+
+**Determinism.** With `concurrency: 1`, a fixed `seed`, and a fixed `maxIterations`, runs are bit-identical across invocations. Above N=1, worker-result ordering depends on real-time scheduling, so `--seed` gives reproducible per-worker RNG sequences but not bit-identical end-state; use `--concurrency 1` for reproducibility tests.
+
+**Performance.** Measured improvements vs the previous single-thread async orchestrator:
+
+| Workload | 4-way improvement | 8-way improvement |
+|---|---|---|
+| agbcc native (`entity-item-drop`) | parity | **2.4× succ iter/s, 2.6× c-att/s** |
+| Wine/mwcc (Melee `fn_8030110C`) | **+58 % c-att/s** | **+3 % c-att/s** |
+
+The 8-way win on agbcc-native comes from removing main-event-loop stall on `await proc.exited`. With a single event loop servicing 8 concurrent compile awaits + mutate/score/report/Ink-render bookkeeping, microtask wake-ups queue behind that work and inflate per-compile wall from the isolated-spawn baseline of ~87 ms to ~474 ms. Workers give each slot its own loop; per-compile wall returns to the baseline.
+
+Runtime control hooks (`updateWeights`, `enableRule`, `disableRule`, `setFocusConstraints`, `setMutationDepth`) fan out to all workers via control messages — `SlotOrchestrator.broadcastRules()` / `setFocusConstraints()` / `setMutationDepth()` respectively. Pool mutations remain on main only.
+
+Worker entry: `packages/core/src/search/slot-worker.ts`, shipped as a separate tsup entry and resolved at runtime via the `@transmuter/core/slot-worker` package export.
 
 ---
 

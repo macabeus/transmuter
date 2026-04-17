@@ -1,0 +1,280 @@
+/**
+ * Slot worker entry point. Runs the mutate → dedup → compile → score pipeline
+ * for one slot in its own Bun Worker thread. Main thread is the SlotOrchestrator;
+ * this worker never touches the Pool or SessionStore.
+ *
+ * Lifecycle:
+ *   1. Main posts {kind:'init'} → we build engine/compiler/scorer/deduplicator,
+ *      register rules, seed adaptive stats, then reply {kind:'ready'}.
+ *   2. Main posts {kind:'job'} repeatedly → we run one iteration and reply with
+ *      a {kind: 'no-mutation' | 'dedup' | 'compile-error' | 'scored'} result.
+ *   3. Main may post control messages (rules-updated, adaptive-snapshot,
+ *      focus-updated, mutation-depth-updated) at any time; we update state and
+ *      keep processing jobs.
+ *   4. Main posts {kind:'shutdown'} → we abort in-flight compile and let the
+ *      worker exit. Main should call worker.terminate() if we don't exit cleanly.
+ *
+ * Module resolution note: this file lives inside @transmuter/core and imports
+ * core internals via ~ alias + relative paths, so the Bun Worker constructor
+ * must point at the built slot-worker.js (shipped as a separate tsup entry).
+ */
+import { Compiler } from '~/compiler/compiler.js';
+import { Deduplicator } from '~/pipeline/deduplicator.js';
+import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
+import { Rng } from '~/rng.js';
+import { AdaptiveSelector } from '~/rules/adaptive-selector.js';
+import { builtInRules } from '~/rules/built-in/index.js';
+import { MutationEngine } from '~/rules/engine.js';
+import { RuleRegistry } from '~/rules/registry.js';
+import { Scorer } from '~/scoring/scorer.js';
+
+import type {
+  WorkerInbound,
+  WorkerInit,
+  WorkerJob,
+  WorkerOutbound,
+  WorkerResult,
+} from './worker-protocol.js';
+
+// ---------------------------------------------------------------------------
+// Worker state (populated on init)
+// ---------------------------------------------------------------------------
+
+interface WorkerState {
+  slotId: number;
+  engine: MutationEngine;
+  compiler: Compiler;
+  scorer: Scorer;
+  deduplicator: Deduplicator;
+  functionName: string;
+  mutationDepth: number;
+  registry: RuleRegistry;
+  adaptive: AdaptiveSelector;
+  abortController: AbortController;
+}
+
+let state: WorkerState | null = null;
+
+// ---------------------------------------------------------------------------
+// Message handler
+// ---------------------------------------------------------------------------
+
+self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
+  const msg = ev.data;
+  try {
+    switch (msg.kind) {
+      case 'init':
+        await handleInit(msg);
+        return;
+
+      case 'job':
+        if (!state) throw new Error('worker received job before init');
+        await handleJob(msg, state);
+        return;
+
+      case 'rules-updated':
+        if (!state) throw new Error('worker received rules-updated before init');
+        applyRules(state, msg.enabledRuleIds, msg.ruleWeights);
+        return;
+
+      case 'adaptive-snapshot':
+        if (!state) throw new Error('worker received adaptive-snapshot before init');
+        state.adaptive.restore(msg.snapshot);
+        return;
+
+      case 'focus-updated':
+        if (!state) throw new Error('worker received focus-updated before init');
+        state.engine.setFocusConstraints([...msg.focusRegions], [...msg.avoidRegions]);
+        return;
+
+      case 'mutation-depth-updated':
+        if (!state) throw new Error('worker received mutation-depth-updated before init');
+        state.mutationDepth = msg.depth;
+        return;
+
+      case 'shutdown':
+        if (state) {
+          state.abortController.abort();
+          await state.compiler.destroy();
+          clearParseCache();
+        }
+        // Let Bun close the worker on the next tick.
+        setTimeout(() => process.exit(0), 0);
+        return;
+    }
+  } catch (err) {
+    post({
+      kind: 'error',
+      slotId: state?.slotId ?? -1,
+      error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+      fatal: msg.kind === 'init',
+    });
+  }
+};
+
+self.onerror = (event: ErrorEvent) => {
+  post({
+    kind: 'error',
+    slotId: state?.slotId ?? -1,
+    error: event.message,
+    fatal: true,
+  });
+};
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+async function handleInit(msg: WorkerInit): Promise<void> {
+  const t0 = performance.now();
+  await ensureLanguageRegistered(msg.language);
+
+  const registry = new RuleRegistry();
+  registry.registerAll(builtInRules);
+  applyRules(
+    // Provide a stub state for applyRules since full state isn't built yet.
+    // We only use registry inside applyRules; the rest of state is ignored.
+    { registry } as WorkerState,
+    msg.enabledRuleIds,
+    msg.ruleWeights,
+  );
+
+  const adaptive = new AdaptiveSelector({ windowSize: msg.adaptiveSelectorWindowSize });
+  if (msg.adaptiveSnapshot.byteLength > 0) {
+    adaptive.restore(msg.adaptiveSnapshot);
+  }
+
+  const rng = new Rng(msg.seed);
+
+  const abortController = new AbortController();
+
+  const compiler = new Compiler({
+    command: msg.compiler.command,
+    cwd: msg.compiler.cwd,
+    functionName: msg.functionName,
+    language: msg.language,
+    signal: abortController.signal,
+    sourcePrefix: msg.sourcePrefix,
+  });
+
+  const scorer = new Scorer(msg.scorer.targetObjectPath, msg.functionName, { ...msg.scorer.diffSettings });
+  await scorer.init();
+
+  const engine = new MutationEngine(registry, rng, {
+    adaptiveSelector: adaptive,
+    language: msg.language,
+  });
+  engine.setFocusConstraints([...msg.focusRegions], [...msg.avoidRegions]);
+
+  state = {
+    slotId: msg.slotId,
+    engine,
+    compiler,
+    scorer,
+    deduplicator: new Deduplicator(),
+    functionName: msg.functionName,
+    mutationDepth: msg.mutationDepth,
+    registry,
+    adaptive,
+    abortController,
+  };
+
+  post({ kind: 'ready', slotId: msg.slotId, initMs: performance.now() - t0 });
+}
+
+async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
+  const tMutate0 = performance.now();
+  const mutation = s.engine.mutate(
+    job.candidateSource,
+    s.functionName,
+    job.mutationTargetId,
+    s.mutationDepth,
+    job.breakdown,
+  );
+  const mutateMs = performance.now() - tMutate0;
+
+  if (!mutation) {
+    post({ kind: 'no-mutation', jobId: job.jobId, mutationTargetId: job.mutationTargetId });
+    return;
+  }
+
+  if (s.deduplicator.checkAndAdd(mutation.source)) {
+    post({ kind: 'dedup', jobId: job.jobId, mutationTargetId: job.mutationTargetId });
+    return;
+  }
+
+  const ruleId = mutation.ruleIds[0] ?? 'unknown';
+
+  const tCompile0 = performance.now();
+  const compileResult = await s.compiler.compile(mutation.source);
+  const compileMs = performance.now() - tCompile0;
+
+  if (!compileResult.success) {
+    post({
+      kind: 'compile-error',
+      jobId: job.jobId,
+      mutationTargetId: job.mutationTargetId,
+      ruleId,
+      location: mutation.location,
+      error: compileResult.error,
+      timings: { mutate: mutateMs, compile: compileMs },
+    });
+    return;
+  }
+
+  const tScore0 = performance.now();
+  const scored = await s.scorer.scoreWithAssembly(compileResult.objPath);
+  const scoreMs = performance.now() - tScore0;
+
+  await Compiler.cleanup(compileResult.objPath);
+
+  if (!scored) {
+    post({
+      kind: 'compile-error',
+      jobId: job.jobId,
+      mutationTargetId: job.mutationTargetId,
+      ruleId,
+      location: mutation.location,
+      error: 'scorer returned null (function symbol not found)',
+      timings: { mutate: mutateMs, compile: compileMs },
+    });
+    return;
+  }
+
+  const result: WorkerResult = {
+    kind: 'scored',
+    jobId: job.jobId,
+    mutationTargetId: job.mutationTargetId,
+    mutatedSource: mutation.source,
+    ruleId,
+    location: mutation.location,
+    score: scored.score,
+    breakdown: scored.breakdown,
+    assembly: scored.assembly,
+    assemblyDiff: scored.assemblyDiff,
+    timings: { mutate: mutateMs, compile: compileMs, score: scoreMs },
+  };
+  post(result);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function applyRules(s: WorkerState, enabled: readonly string[], weights: Readonly<Record<string, number>>): void {
+  const enabledSet = new Set(enabled);
+  for (const rule of s.registry.all()) {
+    if (enabledSet.has(rule.id)) {
+      s.registry.enable(rule.id);
+    } else {
+      s.registry.disable(rule.id);
+    }
+  }
+  s.registry.setWeights({ ...weights });
+}
+
+function post(msg: WorkerOutbound): void {
+  // Bun's Web-Worker postMessage signature accepts a second transfer array; we
+  // don't use transferables on the return path (all payloads are small strings).
+  self.postMessage(msg);
+}

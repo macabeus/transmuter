@@ -314,7 +314,12 @@ export interface MutationSearchOptions {
   sourcePrefix?: string;
   /** Compiler profile ID (e.g., 'agbcc', 'ido', 'mips-gcc-272') */
   profile?: string;
-  /** Number of concurrent slots (default: os.cpus().length) */
+  /**
+   * Number of concurrent slots. Each slot runs in its own Bun Worker thread
+   * (parallel CPU + parallel compile subprocesses). Default:
+   * `min(os.cpus().length, 4)`. Use `concurrency: 1` with a fixed `seed` and
+   * `maxIterations` for bit-identical reproducible runs.
+   */
   concurrency?: number;
   /** Maximum iterations before stopping (default: Infinity) */
   maxIterations?: number;

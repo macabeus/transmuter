@@ -28,6 +28,19 @@ interface RuleRecord {
   window: CircularBuffer<boolean>;
 }
 
+interface AdaptiveSnapshotRule {
+  id: string;
+  successes: number;
+  failures: number;
+  window: { capacity: number; head: number; size: number; values: boolean[] };
+}
+
+interface AdaptiveSnapshotV1 {
+  version: 1;
+  windowSize: number;
+  targets: { id: string; rules: AdaptiveSnapshotRule[] }[];
+}
+
 function cloneRuleRecord(r: RuleRecord): RuleRecord {
   return {
     successes: r.successes,
@@ -212,6 +225,58 @@ export class AdaptiveSelector {
    */
   removeTarget(targetId: string): void {
     this.#targets.delete(targetId);
+  }
+
+  /**
+   * Serialize the entire Thompson Sampling state as a transferable byte buffer.
+   * Intended for shipping stats to worker threads at init time or on periodic
+   * rebroadcast. The bytes are JSON-encoded UTF-8; simplicity over compactness —
+   * snapshots are small (~a few KB for realistic sessions) and sent infrequently.
+   */
+  serialize(): Uint8Array {
+    const snapshot: AdaptiveSnapshotV1 = {
+      version: 1,
+      windowSize: this.#windowSize,
+      targets: [],
+    };
+    for (const [targetId, rules] of this.#targets) {
+      const ruleEntries: AdaptiveSnapshotRule[] = [];
+      for (const [ruleId, record] of rules) {
+        ruleEntries.push({
+          id: ruleId,
+          successes: record.successes,
+          failures: record.failures,
+          window: record.window.toSnapshot(),
+        });
+      }
+      snapshot.targets.push({ id: targetId, rules: ruleEntries });
+    }
+    return new TextEncoder().encode(JSON.stringify(snapshot));
+  }
+
+  /**
+   * Replace the selector's state with the contents of a snapshot produced by
+   * `serialize()`. Invalid payloads throw.
+   */
+  restore(bytes: Uint8Array): void {
+    const decoded = new TextDecoder().decode(bytes);
+    const snapshot = JSON.parse(decoded) as AdaptiveSnapshotV1;
+    if (snapshot.version !== 1) {
+      throw new Error(`AdaptiveSelector.restore: unsupported snapshot version ${snapshot.version}`);
+    }
+    this.#windowSize = snapshot.windowSize;
+    this.#targets = new Map();
+    for (const target of snapshot.targets) {
+      const rules = new Map<string, RuleRecord>();
+      for (const rule of target.rules) {
+        rules.set(rule.id, {
+          successes: rule.successes,
+          failures: rule.failures,
+          window: CircularBuffer.fromSnapshot<boolean>(rule.window),
+        });
+      }
+      this.#targets.set(target.id, rules);
+    }
   }
 
   /**

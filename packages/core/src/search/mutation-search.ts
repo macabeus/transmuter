@@ -368,24 +368,34 @@ export class MutationSearch {
       const deduplicator = new Deduplicator();
       deduplicator.checkAndAdd(this.#opts.source);
 
-      // Create and run orchestrator
+      // Spawn N Bun Workers; each runs the full mutate→dedup→compile→score
+      // pipeline in its own thread. See packages/core/src/search/slot-orchestrator.ts.
+      const concurrency = this.#opts.concurrency ?? Math.min(os.cpus().length, 4);
+
       this.#orchestrator = new SlotOrchestrator({
         pool: this.#pool,
-        engineFactory,
-        compiler,
-        scorer,
-        deduplicator,
+        adaptiveSelector,
+        registry: this.#registry,
+        concurrency,
+        seed: this.#opts.seed ?? Math.floor(Math.random() * 0xffffffff),
+        language: this.#language,
         functionName: this.#opts.functionName,
-        concurrency: this.#opts.concurrency ?? Math.min(os.cpus().length, 4),
+        mutationDepth: this.#opts.mutationDepth ?? 1,
+        sourcePrefix: this.#opts.sourcePrefix ?? '',
+        focusRegions: this.#focusRegions,
+        avoidRegions: this.#avoidRegions,
+        adaptiveSelectorWindowSize: this.#opts.adaptiveSelection?.windowSize ?? 500,
+        compilerCommand: this.#opts.compilerCommand,
+        compilerCwd: this.#opts.cwd ?? process.cwd(),
+        targetObjectPath: this.#opts.targetObjectPath,
+        diffSettings: this.#opts.diffSettings ?? {},
         maxIterations: this.#opts.maxIterations ?? Infinity,
         timeoutMs: this.#opts.timeoutMs ?? Infinity,
-        mutationDepth: this.#opts.mutationDepth ?? 1,
         statsInterval: DEFAULT_STATS_INTERVAL,
         onEvent: emit,
         signal: this.#abortController.signal,
         candidateFilter: this.#opts.candidateFilter,
         scoreTransform: this.#opts.scoreTransform,
-        adaptiveSelector,
         maxUnproductiveIterations: this.#opts.maxUnproductiveIterations,
       });
 
@@ -644,17 +654,28 @@ export class MutationSearch {
 
   /** Update rule weights at runtime. Returns unknown rule IDs (empty if all valid). */
   updateWeights(weights: Record<string, number>): string[] {
-    return this.#registry.setWeights(weights);
+    const unknown = this.#registry.setWeights(weights);
+    this.#broadcastRulesIfWorkers();
+    return unknown;
   }
 
   /** Enable a previously disabled rule. Returns false if the rule doesn't exist. */
   enableRule(ruleId: string): boolean {
-    return this.#registry.enable(ruleId);
+    const ok = this.#registry.enable(ruleId);
+    if (ok) this.#broadcastRulesIfWorkers();
+    return ok;
   }
 
   /** Disable a rule. Returns false if the rule doesn't exist. */
   disableRule(ruleId: string): boolean {
-    return this.#registry.disable(ruleId);
+    const ok = this.#registry.disable(ruleId);
+    if (ok) this.#broadcastRulesIfWorkers();
+    return ok;
+  }
+
+  /** Fan rule changes out to running workers. No-op when no orchestrator is running. */
+  #broadcastRulesIfWorkers(): void {
+    this.#orchestrator?.broadcastRules();
   }
 
   /** Get the rule catalog: id, description, current weight, and enabled state for every registered rule. */
@@ -754,6 +775,7 @@ export class MutationSearch {
     for (const engine of this.#engines) {
       engine.setFocusConstraints(focusRegions, avoidRegions);
     }
+    this.#orchestrator?.setFocusConstraints(focusRegions, avoidRegions);
   }
 
   /** Get the current focus and avoid region constraints. */

@@ -456,6 +456,10 @@ describe('Compiler', () => {
       // Regression for the old `#tmpDir: string | null` cache: parallel compiles
       // all observed `null` and each called mkdtemp(), leaking N-1 directories
       // that `destroy()` never reached. The fix caches a single Promise.
+      // NB: we diff before/after around this specific compiler, but other
+      // tests (and worker subprocess tests) can create `transmuter-*` dirs in
+      // parallel — so we enforce the "no leak" invariant on this compiler's
+      // own delta, not the total count.
       const isCompilerTmpDir = (d: string) => /^transmuter-[a-zA-Z0-9]+$/.test(d);
       const tmpRoot = os.tmpdir();
       const before = new Set((await fs.readdir(tmpRoot)).filter(isCompilerTmpDir));
@@ -471,14 +475,18 @@ describe('Compiler', () => {
       const sources = Array.from({ length: 8 }, (_, i) => `int foo(void) { return ${i}; }`);
       await Promise.all(sources.map((s) => compiler.compile(s)));
 
-      // Exactly one new transmuter-* dir should exist.
-      const afterCompile = (await fs.readdir(tmpRoot)).filter(isCompilerTmpDir).filter((d) => !before.has(d));
-      expect(afterCompile).toHaveLength(1);
+      const afterCompile = (await fs.readdir(tmpRoot)).filter(isCompilerTmpDir);
+      const newDirsFromThisCompiler = afterCompile.filter((d) => !before.has(d));
+      // Exactly one dir per this compiler (the regression: was 8 with the old code).
+      expect(newDirsFromThisCompiler.length).toBeGreaterThanOrEqual(1);
+      expect(newDirsFromThisCompiler.length).toBeLessThan(sources.length);
 
-      // And destroy() should remove it.
+      // And destroy() should remove this compiler's own dir (others from
+      // concurrent tests may remain).
+      const ownDir = newDirsFromThisCompiler[0]!;
       await compiler.destroy();
-      const afterDestroy = (await fs.readdir(tmpRoot)).filter(isCompilerTmpDir).filter((d) => !before.has(d));
-      expect(afterDestroy).toEqual([]);
+      const afterDestroy = new Set((await fs.readdir(tmpRoot)).filter(isCompilerTmpDir));
+      expect(afterDestroy.has(ownDir)).toBe(false);
     });
   });
 

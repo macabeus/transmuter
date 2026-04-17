@@ -166,7 +166,7 @@ transmuter match base.pas \
 | `--compiler <cmd>`     | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{functionName}}`)                    |
 | `--cwd <path>`         | Working directory for the compiler                                                                   |
 | `--profile <id>`       | Compiler profile: `agbcc`, `old-agbcc`, `ido`, `mips-gcc-272`                                        |
-| `--concurrency <n>`    | Parallel slots (default: CPU count)                                                                  |
+| `--concurrency <n>`    | Parallel slots, each running in its own Bun Worker thread (default: `min(CPU count, 4)`). Use `--concurrency 1 --seed N --max-iterations M` for bit-identical reproducible runs. |
 | `--max-iterations <n>` | Stop after N iterations                                                                              |
 | `--timeout <ms>`       | Stop after this many milliseconds                                                                    |
 | `--seed <n>`           | RNG seed for reproducible runs                                                                       |

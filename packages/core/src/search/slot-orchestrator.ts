@@ -1,210 +1,389 @@
 /**
- * Slot orchestrator — manages concurrent mutation/compile/score slots.
+ * Slot orchestrator — spawns N Bun Workers, each running the full mutate →
+ * dedup → compile → score pipeline in its own thread. Main thread owns: the
+ * Pool, the authoritative AdaptiveSelector, event emission, and HTTP API side
+ * effects.
  *
- * Each slot runs an independent async loop: select target -> get head source ->
- * mutate -> compile -> score -> report to pool (potentially fork).
- * Each slot gets its own MutationEngine (with a forked RNG) for deterministic isolation.
- * All slots share the same Pool and Deduplicator.
+ * Determinism: with `concurrency === 1` + a fixed seed + `--max-iterations`,
+ * runs are bit-identical across invocations. AdaptiveSelector rebroadcast is
+ * iteration-counted (not wall-clock) and skipped entirely for the single-
+ * worker case. Above N=1, worker-result ordering depends on real-time
+ * scheduling; use `--concurrency 1` for reproducibility tests.
+ *
+ * See BUN_WORKERS_PLAN.md §3 and §6 for the architecture.
  */
-import { Compiler } from '~/compiler/compiler.js';
-import type { Deduplicator } from '~/pipeline/deduplicator.js';
+import type { Language } from '~/language.js';
 import type { Pool } from '~/pipeline/pool.js';
 import type { AdaptiveSelector } from '~/rules/adaptive-selector.js';
-import type { MutationEngine } from '~/rules/engine.js';
-import { PROFILE_STATS } from '~/rules/engine.js';
-import type { AssemblyScoreResult, MutationSearchEvent, MutationSearchEventHandler } from '~/types.js';
+import type { RuleRegistry } from '~/rules/registry.js';
+import type {
+  AssemblyScoreResult,
+  AvoidRegionConstraint,
+  FocusRegionConstraint,
+  MutationSearchEvent,
+  MutationSearchEventHandler,
+} from '~/types.js';
 
-/** Minimal scorer interface used by the SlotOrchestrator. */
-export interface SlotScorer {
-  scoreWithAssembly(candidateObjPath: string): Promise<AssemblyScoreResult | null>;
-}
+import type {
+  WorkerInit,
+  WorkerJob,
+  WorkerOutbound,
+  WorkerResult,
+} from './worker-protocol.js';
 
+/** Options for SlotOrchestrator. */
 export interface SlotOrchestratorOptions {
   pool: Pool;
-  /** Factory that creates a per-slot MutationEngine with a forked RNG for deterministic isolation. */
-  engineFactory: (slotIndex: number) => MutationEngine;
-  compiler: Compiler;
-  scorer: SlotScorer;
-  deduplicator: Deduplicator;
-  functionName: string;
+  adaptiveSelector: AdaptiveSelector;
+  registry: RuleRegistry;
   concurrency: number;
+  seed: number;
+  language: Language;
+  functionName: string;
+  mutationDepth: number;
+  sourcePrefix: string;
+  focusRegions: readonly FocusRegionConstraint[];
+  avoidRegions: readonly AvoidRegionConstraint[];
+  adaptiveSelectorWindowSize: number;
+  compilerCommand: string;
+  compilerCwd: string;
+  targetObjectPath: string;
+  diffSettings: Record<string, string>;
   maxIterations: number;
   timeoutMs: number;
-  mutationDepth: number;
   statsInterval: number;
   onEvent: MutationSearchEventHandler;
   signal: AbortSignal;
-  /** Optional filter applied after dedup, before compile. Return false to reject. */
   candidateFilter?: (source: string) => boolean;
-  /**
-   * Optional score transform applied after assembly scoring.
-   * Receives the mutation source and the full AssemblyScoreResult, returns the final
-   * score used for pool reporting and fork decisions.
-   * Use case: cleanup Phase 2 returns smell score when assembly matches (asmScore == 0)
-   * and a high penalty when it doesn't.
-   */
   scoreTransform?: (source: string, asmResult: AssemblyScoreResult) => number;
-  /** Adaptive per-target rule selector for Thompson Sampling feedback. */
-  adaptiveSelector: AdaptiveSelector;
-  /**
-   * Maximum iterations without a single compilation before stopping.
-   * When a candidateFilter rejects all mutations (e.g., refine mode for asm constructs),
-   * the loop spins indefinitely. This threshold detects the situation and stops early.
-   * Default: undefined (no limit).
-   */
   maxUnproductiveIterations?: number;
+  /**
+   * Rebroadcast the authoritative AdaptiveSelector snapshot to all workers
+   * every N results. Iteration-counted rather than wall-clock-timed so that
+   * `--concurrency 1 --seed X --max-iterations Y` is bit-identical across
+   * runs. Default: 100. Skipped entirely when `concurrency === 1` (single
+   * worker is already in sync with main via per-result records).
+   */
+  adaptiveRebroadcastEvery?: number;
+  prefetchDepth?: number;
+  /** Optional URL to the built `slot-worker.js` (overridable for tests that load from src). */
+  workerEntry?: URL;
+}
+
+interface WorkerSlot {
+  id: number;
+  worker: Worker;
+  pending: number;
+  ready: Promise<void>;
+  inflight: Map<number, { targetId: string; startedAt: number }>;
 }
 
 interface SlotStats {
   compiled: number;
   errors: number;
   deduped: number;
-}
-
-interface PhaseTimings {
-  mutate: number;
-  dedup: number;
-  compile: number;
-  score: number;
-  report: number;
-  other: number;
-  iterations: number;
-}
-
-const PROFILE = !!process.env.TRANSMUTER_PROFILE;
-
-function hrms(): number {
-  const [s, ns] = process.hrtime();
-  return s * 1000 + ns / 1_000_000;
+  noMutation: number;
 }
 
 export class SlotOrchestrator {
   #opts: SlotOrchestratorOptions;
+  #slots: WorkerSlot[] = [];
   #iteration = 0;
   #lastStatsIteration = 0;
   #startTime = 0;
   #paused = false;
   #perfectMatchFound = false;
-  #pauseResolvers: (() => void)[] = [];
-  #slotStats: SlotStats = { compiled: 0, errors: 0, deduped: 0 };
+  #resumeWaiters: (() => void)[] = [];
+  #slotStats: SlotStats = { compiled: 0, errors: 0, deduped: 0, noMutation: 0 };
   #mutationDepth: number;
-  #phaseTimings: PhaseTimings = { mutate: 0, dedup: 0, compile: 0, score: 0, report: 0, other: 0, iterations: 0 };
+  #nextJobId = 0;
+  #stopped = false;
+  #runResolve: (() => void) | null = null;
+  #stopTimer: ReturnType<typeof setTimeout> | null = null;
+  #lastRebroadcastIteration = 0;
 
   constructor(opts: SlotOrchestratorOptions) {
     this.#opts = opts;
     this.#mutationDepth = opts.mutationDepth;
   }
 
-  /** Run all slots until completion. Returns when all slots stop. */
   async run(): Promise<void> {
     this.#startTime = Date.now();
     this.#iteration = 0;
 
-    const slots = Array.from({ length: this.#opts.concurrency }, (_, i) => this.#slotLoop(i));
+    this.#spawnWorkers();
+    await Promise.all(this.#slots.map((s) => s.ready));
 
-    await Promise.allSettled(slots);
+    if (this.#opts.signal.aborted) {
+      await this.#shutdown();
+      return;
+    }
 
-    if (PROFILE) {
-      const elapsedMs = Date.now() - this.#startTime;
-      const wallSec = elapsedMs / 1000;
-      const t = this.#phaseTimings;
-      const iters = t.iterations;
-      const succ = this.#slotStats.compiled;
-      const parseMs = PROFILE_STATS.parseNs / 1_000_000;
-      const ruleApplyMs = PROFILE_STATS.ruleApplyNs / 1_000_000;
-      const summed = t.mutate + t.dedup + t.compile + t.score + t.report;
-      const perIterCpu = summed / Math.max(iters, 1);
-      const capacityWall = elapsedMs * this.#opts.concurrency;
-      const fmt = (ms: number) => `${(ms / 1000).toFixed(2)}s (${((ms / capacityWall) * 100).toFixed(1)}%)`;
-      const line = [
-        `\n[TRANSMUTER_PROFILE]`,
-        `  wall=${wallSec.toFixed(2)}s  iterations=${iters}  successful_compiles=${succ}  concurrency=${this.#opts.concurrency}`,
-        `  iter/s=${(iters / wallSec).toFixed(2)}  avg-iter-cpu=${perIterCpu.toFixed(1)}ms (sum-of-phases/iter)`,
-        `  (phase% is of total-cpu-budget = wall*concurrency = ${(capacityWall / 1000).toFixed(2)}s)`,
-        `  mutate=${fmt(t.mutate)}  [parse=${(parseMs / 1000).toFixed(2)}s  ruleApply=${(ruleApplyMs / 1000).toFixed(2)}s]`,
-        `  dedup=${fmt(t.dedup)}`,
-        `  compile=${fmt(t.compile)}`,
-        `  score=${fmt(t.score)}`,
-        `  report=${fmt(t.report)}`,
-      ].join('\n');
-      process.stderr.write(line + '\n');
+    this.#opts.signal.addEventListener(
+      'abort',
+      () => {
+        this.#stopped = true;
+        this.#wakeRunLoop();
+      },
+      { once: true },
+    );
+
+    if (Number.isFinite(this.#opts.timeoutMs)) {
+      this.#stopTimer = setTimeout(() => {
+        this.#stopped = true;
+        this.#wakeRunLoop();
+      }, this.#opts.timeoutMs);
+    }
+
+    try {
+      await this.#runLoop();
+    } finally {
+      // Emit profile BEFORE shutting workers down; on some Bun versions the
+      // process exits with a crash during worker.terminate() and any
+      // post-shutdown work (including profile output) gets lost.
+      this.#maybeEmitProfile();
+      await this.#shutdown();
     }
   }
 
-  /** Get current iteration count. */
+  #maybeEmitProfile(): void {
+    if (!process.env.TRANSMUTER_PROFILE) return;
+    const wall = (Date.now() - this.#startTime) / 1000;
+    const s = this.#slotStats;
+    const totalResults = this.#iteration;
+    const cAtt = s.compiled + s.errors;
+    const line = [
+      `\n[TRANSMUTER_WORKER_PROFILE]`,
+      `  wall=${wall.toFixed(2)}s  workers=${this.#opts.concurrency}  iter-total=${totalResults}  iter/s=${(totalResults / wall).toFixed(1)}`,
+      `  scored=${s.compiled}  compile-errors=${s.errors}  dedup=${s.deduped}  no-mutation=${s.noMutation}`,
+      `  compile-attempts/s=${(cAtt / wall).toFixed(2)}  successful-iter/s=${(s.compiled / wall).toFixed(2)}`,
+      `  (compile rate ${((cAtt / totalResults) * 100).toFixed(1)}% of all results; no-mutation ${((s.noMutation / totalResults) * 100).toFixed(1)}%)`,
+    ].join('\n');
+    process.stderr.write(line + '\n');
+  }
+
   getIteration(): number {
     return this.#iteration;
   }
 
-  /** Get total number of successful compilations. */
   getCompiledCount(): number {
     return this.#slotStats.compiled;
   }
 
-  /** Get elapsed time in ms. */
   getElapsed(): number {
     return Date.now() - this.#startTime;
   }
 
-  /**
-   * Signal that a perfect match was found externally (e.g. via code injection).
-   * All slots will stop on their next iteration check.
-   */
   signalPerfectMatch(): void {
     this.#perfectMatchFound = true;
-    // Wake up any paused slots so they can see the stop signal
-    for (const resolve of this.#pauseResolvers) {
-      resolve();
-    }
-    this.#pauseResolvers = [];
+    this.#stopped = true;
+    this.#wakeRunLoop();
   }
 
-  /** Set the number of mutations chained per iteration. */
   setMutationDepth(depth: number): void {
     this.#mutationDepth = depth;
+    for (const slot of this.#slots) {
+      slot.worker.postMessage({ kind: 'mutation-depth-updated', depth });
+    }
   }
 
-  /** Get the current mutation depth. */
   getMutationDepth(): number {
     return this.#mutationDepth;
   }
 
-  /** Pause all slots. */
   pause(): void {
     this.#paused = true;
   }
 
-  /** Resume all slots. */
   resume(): void {
     this.#paused = false;
-    for (const resolve of this.#pauseResolvers) {
-      resolve();
-    }
-    this.#pauseResolvers = [];
+    for (const w of this.#resumeWaiters) w();
+    this.#resumeWaiters = [];
+    this.#wakeRunLoop();
   }
 
-  async #waitIfPaused(): Promise<void> {
-    if (!this.#paused) {
-      return;
+  setFocusConstraints(focusRegions: readonly FocusRegionConstraint[], avoidRegions: readonly AvoidRegionConstraint[]): void {
+    this.#opts = { ...this.#opts, focusRegions, avoidRegions };
+    for (const slot of this.#slots) {
+      slot.worker.postMessage({ kind: 'focus-updated', focusRegions: [...focusRegions], avoidRegions: [...avoidRegions] });
     }
-    await new Promise<void>((resolve) => {
-      this.#pauseResolvers.push(resolve);
+  }
+
+  broadcastRules(): void {
+    const enabled = this.#opts.registry
+      .all()
+      .filter((r) => this.#opts.registry.getWeight(r.id) > 0)
+      .map((r) => r.id);
+    const weights = this.#opts.registry.getAllWeights();
+    for (const slot of this.#slots) {
+      slot.worker.postMessage({ kind: 'rules-updated', enabledRuleIds: enabled, ruleWeights: weights });
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------
+
+  #spawnWorkers(): void {
+    // Resolve the slot-worker entry two ways:
+    //  - In tests (vitest running src/), the orchestrator lives alongside
+    //    `slot-worker.ts`, so the sibling URL works.
+    //  - In built dist, tsup inlines the orchestrator into `dist/index.js`
+    //    while slot-worker is emitted separately as `dist/search/slot-worker.js`.
+    //    The package.json `./slot-worker` export handles that case via
+    //    `import.meta.resolve`.
+    const resolveEntry = (): URL => {
+      try {
+        return new URL(import.meta.resolve('@transmuter/core/slot-worker'));
+      } catch {
+        return new URL('./slot-worker.js', import.meta.url);
+      }
+    };
+    const workerUrl = this.#opts.workerEntry ?? resolveEntry();
+    for (let slotId = 0; slotId < this.#opts.concurrency; slotId++) {
+      const worker = new Worker(workerUrl);
+      const slot: WorkerSlot = {
+        id: slotId,
+        worker,
+        pending: 0,
+        inflight: new Map(),
+        ready: this.#initWorker(worker, slotId),
+      };
+      worker.onmessage = (ev: MessageEvent<WorkerOutbound>) => this.#onMessage(slot, ev.data);
+      worker.onerror = (ev: ErrorEvent) => {
+        this.#emit({
+          type: 'error',
+          message: `worker ${slotId} error: ${ev.message}`,
+        });
+      };
+      this.#slots.push(slot);
+    }
+  }
+
+  #initWorker(worker: Worker, slotId: number): Promise<void> {
+    const registry = this.#opts.registry;
+    const enabled = registry.all().filter((r) => registry.getWeight(r.id) > 0).map((r) => r.id);
+    const init: WorkerInit = {
+      kind: 'init',
+      slotId,
+      seed: this.#deriveSeed(slotId),
+      language: this.#opts.language,
+      functionName: this.#opts.functionName,
+      mutationDepth: this.#mutationDepth,
+      sourcePrefix: this.#opts.sourcePrefix,
+      enabledRuleIds: enabled,
+      ruleWeights: registry.getAllWeights(),
+      adaptiveSnapshot: this.#opts.adaptiveSelector.serialize(),
+      focusRegions: this.#opts.focusRegions,
+      avoidRegions: this.#opts.avoidRegions,
+      adaptiveSelectorWindowSize: this.#opts.adaptiveSelectorWindowSize,
+      compiler: { command: this.#opts.compilerCommand, cwd: this.#opts.compilerCwd },
+      scorer: { targetObjectPath: this.#opts.targetObjectPath, diffSettings: this.#opts.diffSettings },
+    };
+    worker.postMessage(init);
+
+    return new Promise<void>((resolve, reject) => {
+      const handler = (ev: MessageEvent<WorkerOutbound>) => {
+        const msg = ev.data;
+        if (msg.kind === 'ready' && msg.slotId === slotId) {
+          worker.removeEventListener('message', handler);
+          resolve();
+        } else if (msg.kind === 'error' && msg.fatal) {
+          worker.removeEventListener('message', handler);
+          reject(new Error(`worker ${slotId} fatal init error: ${msg.error}`));
+        }
+      };
+      worker.addEventListener('message', handler);
+      // Fallback so a silent worker doesn't hang the whole pool forever.
+      setTimeout(() => {
+        worker.removeEventListener('message', handler);
+        reject(new Error(`worker ${slotId} did not become ready in 30s`));
+      }, 30_000);
     });
   }
 
+  #deriveSeed(slotId: number): number {
+    // Deterministic: same base seed + slotId → same worker seed.
+    return (this.#opts.seed ^ (slotId * 0x9e3779b1)) >>> 0;
+  }
+
+  async #runLoop(): Promise<void> {
+    while (!this.#shouldStop()) {
+      if (this.#paused) {
+        await new Promise<void>((r) => this.#resumeWaiters.push(r));
+        continue;
+      }
+
+      const filled = this.#topUpWorkers();
+      if (!filled && !this.#allIdle()) {
+        // Workers are busy; wait for a result to free a slot.
+        await new Promise<void>((resolve) => {
+          this.#runResolve = resolve;
+        });
+        this.#runResolve = null;
+      } else if (!filled && this.#allIdle()) {
+        // Pool empty and nothing in flight — we are done.
+        break;
+      }
+    }
+  }
+
+  #topUpWorkers(): boolean {
+    if (this.#shouldStop()) return false;
+    const prefetch = this.#opts.prefetchDepth ?? 2;
+    let postedAny = false;
+    for (const slot of this.#slots) {
+      while (slot.pending < prefetch) {
+        if (this.#shouldStop()) return postedAny;
+
+        const activeTargets = this.#opts.pool.getActiveTargets();
+        if (activeTargets.length === 0) return postedAny;
+
+        const target = this.#opts.pool.select();
+        const headCandidate = this.#opts.pool.getCandidate(target.candidateId);
+        if (!headCandidate) continue;
+
+        // Optional candidate filter — applied here so we don't waste a
+        // round-trip for mutations we know will be rejected upstream.
+        // Since the filter is main-only, we evaluate it on the source the
+        // worker would operate on; filtering happens after mutation in the
+        // worker, so we can't call the filter here. Leave filter handling to
+        // after the worker returns (applied on `mutatedSource`).
+
+        const jobId = ++this.#nextJobId;
+        const job: WorkerJob = {
+          kind: 'job',
+          jobId,
+          mutationTargetId: target.id,
+          candidateSource: headCandidate.source,
+          breakdown: headCandidate.breakdown,
+        };
+        slot.inflight.set(jobId, { targetId: target.id, startedAt: Date.now() });
+        slot.pending++;
+        slot.worker.postMessage(job);
+        postedAny = true;
+      }
+    }
+    return postedAny;
+  }
+
+  #allIdle(): boolean {
+    return this.#slots.every((s) => s.pending === 0);
+  }
+
+  #wakeRunLoop(): void {
+    if (this.#runResolve) {
+      this.#runResolve();
+      this.#runResolve = null;
+    }
+  }
+
   #shouldStop(): boolean {
-    if (this.#perfectMatchFound) {
-      return true;
-    }
-    if (this.#opts.signal.aborted) {
-      return true;
-    }
-    if (this.#iteration >= this.#opts.maxIterations) {
-      return true;
-    }
-    if (Date.now() - this.#startTime >= this.#opts.timeoutMs) {
-      return true;
-    }
+    if (this.#stopped) return true;
+    if (this.#perfectMatchFound) return true;
+    if (this.#opts.signal.aborted) return true;
+    if (this.#iteration >= this.#opts.maxIterations) return true;
+    if (Date.now() - this.#startTime >= this.#opts.timeoutMs) return true;
     if (
       this.#opts.maxUnproductiveIterations !== undefined &&
       this.#iteration > 0 &&
@@ -216,199 +395,170 @@ export class SlotOrchestrator {
     return false;
   }
 
-  #emit(event: MutationSearchEvent): void {
-    try {
-      this.#opts.onEvent(event);
-    } catch {
-      // Don't let consumer errors crash the orchestrator
+  #onMessage(slot: WorkerSlot, msg: WorkerOutbound): void {
+    if (msg.kind === 'ready' || msg.kind === 'error') {
+      if (msg.kind === 'error') {
+        this.#emit({ type: 'error', message: `worker ${msg.slotId} error: ${msg.error}` });
+      }
+      return;
     }
+
+    // All remaining kinds are WorkerResult.
+    const result = msg as WorkerResult;
+    slot.inflight.delete(result.jobId);
+    slot.pending = Math.max(0, slot.pending - 1);
+
+    if (!this.#shouldStop()) {
+      this.#iteration++;
+      this.#handleResult(result);
+    }
+
+    // Emit periodic stats.
+    if (this.#iteration - this.#lastStatsIteration >= this.#opts.statsInterval) {
+      this.#lastStatsIteration = this.#iteration;
+      this.#emitStats(this.#iteration);
+    }
+
+    // Iteration-counted adaptive rebroadcast. Keeps worker Thompson state in
+    // sync with main's authoritative copy without wall-clock timing (which
+    // would break determinism under fixed --seed). Single-worker sessions
+    // skip the broadcast — the worker's local selector already mirrors main
+    // because main records on every result in the exact order the worker
+    // produced them.
+    if (this.#opts.concurrency > 1) {
+      const every = this.#opts.adaptiveRebroadcastEvery ?? 100;
+      if (every > 0 && this.#iteration - this.#lastRebroadcastIteration >= every) {
+        this.#lastRebroadcastIteration = this.#iteration;
+        this.#broadcastAdaptiveSnapshot();
+      }
+    }
+
+    // Always wake the run loop so top-up can proceed.
+    this.#wakeRunLoop();
   }
 
-  async #slotLoop(slotId: number): Promise<void> {
-    const { pool, engineFactory, compiler, scorer, deduplicator } = this.#opts;
-    const engine = engineFactory(slotId);
-    let tightLoopCount = 0;
-
-    while (!this.#shouldStop()) {
-      await this.#waitIfPaused();
-      if (this.#shouldStop()) {
-        break;
-      }
-
-      // Yield to the event loop periodically when iterations skip compilation
-      // (e.g., candidate filter rejections in refine mode). Without this, the
-      // loop runs entirely in microtasks and starves the HTTP server.
-      if (++tightLoopCount >= 64) {
-        tightLoopCount = 0;
-        await new Promise<void>((r) => setImmediate(r));
-      }
-
-      // 1. Select a mutation target
-      const target = pool.select();
-      const headCandidate = pool.getCandidate(target.candidateId);
-      if (!headCandidate) {
-        continue;
-      }
-
-      // 2. Apply mutation to the head candidate's source
-      const tMutateStart = PROFILE ? hrms() : 0;
-      const mutation = engine.mutate(
-        headCandidate.source,
-        this.#opts.functionName,
-        target.id,
-        this.#mutationDepth,
-        headCandidate.breakdown,
-      );
-      if (PROFILE) this.#phaseTimings.mutate += hrms() - tMutateStart;
-      if (!mutation) {
-        continue;
-      }
-
-      // Increment iteration (shared across slots)
-      this.#iteration++;
-      const currentIteration = this.#iteration;
-
-      // Periodic stats — checked here (before the dedup/filter/compile-error
-      // `continue`s) so boundary-crossing events can't be silently dropped.
-      // Using `>=` rather than `currentIteration % statsInterval === 0` means
-      // we emit on the first iteration that crosses each boundary even if the
-      // exact modulo iteration happened to be a dedup hit.
-      if (currentIteration - this.#lastStatsIteration >= this.#opts.statsInterval) {
-        this.#lastStatsIteration = currentIteration;
-        this.#emitStats(currentIteration);
-      }
-
-      // 3. Deduplication check
-      const tDedupStart = PROFILE ? hrms() : 0;
-      const isDup = deduplicator.checkAndAdd(mutation.source);
-      if (PROFILE) this.#phaseTimings.dedup += hrms() - tDedupStart;
-      if (isDup) {
+  #handleResult(result: WorkerResult): void {
+    switch (result.kind) {
+      case 'no-mutation':
+        this.#slotStats.noMutation++;
+        return;
+      case 'dedup':
         this.#slotStats.deduped++;
-        continue;
-      }
-
-      // 3b. Candidate filter (e.g., reject re-introduced violations during refinement)
-      if (this.#opts.candidateFilter && !this.#opts.candidateFilter(mutation.source)) {
-        continue;
-      }
-
-      // 4. Compile
-      tightLoopCount = 0;
-      const tCompileStart = PROFILE ? hrms() : 0;
-      const compileResult = await compiler.compile(mutation.source);
-      if (PROFILE) this.#phaseTimings.compile += hrms() - tCompileStart;
-      if (!compileResult.success) {
+        return;
+      case 'compile-error': {
         this.#slotStats.errors++;
-        pool.recordFailure(target.id);
+        this.#opts.pool.recordFailure(result.mutationTargetId);
         this.#emit({
           type: 'compilation-error',
-          mutationTargetId: target.id,
-          ruleId: mutation.ruleIds[0] ?? 'unknown',
-          error: compileResult.error,
+          mutationTargetId: result.mutationTargetId,
+          ruleId: result.ruleId,
+          error: result.error,
         });
-        continue;
+        return;
       }
+      case 'scored': {
+        // Main-side candidate filter (applied to the mutated source since we
+        // couldn't evaluate it before dispatching the job).
+        if (this.#opts.candidateFilter && !this.#opts.candidateFilter(result.mutatedSource)) {
+          return;
+        }
 
-      this.#slotStats.compiled++;
+        this.#slotStats.compiled++;
 
-      // 5. Score + extract assembly in one pass
-      const tScoreStart = PROFILE ? hrms() : 0;
-      const result = await scorer.scoreWithAssembly(compileResult.objPath);
-      if (PROFILE) this.#phaseTimings.score += hrms() - tScoreStart;
+        const asmResult: AssemblyScoreResult = {
+          score: result.score,
+          breakdown: result.breakdown,
+          assembly: result.assembly,
+          assemblyDiff: result.assemblyDiff,
+        };
+        const finalScore = this.#opts.scoreTransform
+          ? this.#opts.scoreTransform(result.mutatedSource, asmResult)
+          : result.score;
 
-      // Clean up the compiled object file
-      await Compiler.cleanup(compileResult.objPath);
-
-      if (result === null) {
-        continue;
-      }
-
-      const { assembly, assemblyDiff, breakdown } = result;
-      const score = this.#opts.scoreTransform?.(mutation.source, result) ?? result.score;
-
-      // 6. Report to pool (may trigger a fork)
-      const ruleId = mutation.ruleIds[0] ?? 'unknown';
-      const tReportStart = PROFILE ? hrms() : 0;
-      const { forked } = pool.report(
-        {
-          mutationTargetId: target.id,
-          source: mutation.source,
-          score,
-          breakdown,
-          ruleId,
-          location: mutation.location,
-          assembly,
-          assemblyDiff,
-        },
-        currentIteration,
-      );
-      if (PROFILE) this.#phaseTimings.report += hrms() - tReportStart;
-
-      // 7. Emit events
-      this.#emit({
-        type: 'scored',
-        iteration: currentIteration,
-        score,
-        ruleId,
-        mutationTargetId: target.id,
-      });
-
-      if (forked) {
-        this.#emit({
-          type: 'forked',
-          iteration: currentIteration,
-          parentCandidateId: headCandidate.id,
-          candidateId: forked.candidate.id,
-          mutationTargetId: forked.mutationTarget.id,
-          oldScore: headCandidate.score,
-          newScore: score,
-          source: mutation.source,
-          ruleId,
-          location: mutation.location,
-          assembly,
-          assemblyDiff,
-          breakdown,
-        });
+        const headCandidate = this.#opts.pool
+          .getActiveTargets()
+          .find((t) => t.id === result.mutationTargetId);
+        const reported = this.#opts.pool.report(
+          {
+            mutationTargetId: result.mutationTargetId,
+            source: result.mutatedSource,
+            score: finalScore,
+            breakdown: result.breakdown,
+            ruleId: result.ruleId,
+            location: result.location,
+            assembly: result.assembly,
+            assemblyDiff: result.assemblyDiff,
+          },
+          this.#iteration,
+        );
 
         this.#emit({
-          type: 'mutation-target-created',
-          mutationTargetId: forked.mutationTarget.id,
-          candidateId: forked.candidate.id,
-          score,
-          origin: 'organic',
+          type: 'scored',
+          iteration: this.#iteration,
+          score: finalScore,
+          ruleId: result.ruleId,
+          mutationTargetId: result.mutationTargetId,
         });
-      }
 
-      this.#opts.adaptiveSelector.record(target.id, ruleId, !!forked);
-      if (forked) {
-        this.#opts.adaptiveSelector.fork(target.id, forked.mutationTarget.id);
-      }
+        const forked = reported.forked;
+        if (forked) {
+          const parentCandidate = headCandidate
+            ? this.#opts.pool.getCandidate(headCandidate.candidateId)
+            : undefined;
+          this.#emit({
+            type: 'forked',
+            iteration: this.#iteration,
+            parentCandidateId: parentCandidate?.id ?? 'unknown',
+            candidateId: forked.candidate.id,
+            mutationTargetId: forked.mutationTarget.id,
+            oldScore: parentCandidate?.score ?? finalScore,
+            newScore: finalScore,
+            source: result.mutatedSource,
+            ruleId: result.ruleId,
+            location: result.location,
+            assembly: result.assembly,
+            assemblyDiff: result.assemblyDiff,
+            breakdown: result.breakdown,
+          });
+          this.#emit({
+            type: 'mutation-target-created',
+            mutationTargetId: forked.mutationTarget.id,
+            candidateId: forked.candidate.id,
+            score: finalScore,
+            origin: 'organic',
+          });
+        }
 
-      if (PROFILE) {
-        this.#phaseTimings.iterations++;
-      }
+        this.#opts.adaptiveSelector.record(result.mutationTargetId, result.ruleId, !!forked);
+        if (forked) {
+          this.#opts.adaptiveSelector.fork(result.mutationTargetId, forked.mutationTarget.id);
+        }
 
-      // Perfect match — signal all slots to stop
-      if (score === 0) {
-        this.#perfectMatchFound = true;
-        this.#emit({
-          type: 'perfect-match',
-          iteration: currentIteration,
-          source: mutation.source,
-          candidateId: forked?.candidate.id ?? headCandidate.id,
-        });
+        if (finalScore === 0) {
+          this.#perfectMatchFound = true;
+          this.#stopped = true;
+          this.#emit({
+            type: 'perfect-match',
+            iteration: this.#iteration,
+            source: result.mutatedSource,
+            candidateId: forked?.candidate.id ?? 'unknown',
+          });
+        }
         return;
       }
     }
   }
 
-  getPhaseTimings(): PhaseTimings {
-    return { ...this.#phaseTimings };
+  #emit(event: MutationSearchEvent): void {
+    try {
+      this.#opts.onEvent(event);
+    } catch {
+      // Swallow consumer errors.
+    }
   }
 
   #emitStats(iteration: number): void {
     const stats = this.#opts.pool.getStats();
-
     this.#emit({
       type: 'stats',
       iteration,
@@ -421,5 +571,35 @@ export class SlotOrchestrator {
       deduped: this.#slotStats.deduped,
       rulesUsed: {},
     });
+  }
+
+  #broadcastAdaptiveSnapshot(): void {
+    const snapshot = this.#opts.adaptiveSelector.serialize();
+    for (const slot of this.#slots) {
+      slot.worker.postMessage({ kind: 'adaptive-snapshot', snapshot });
+    }
+  }
+
+  async #shutdown(): Promise<void> {
+    if (this.#stopTimer) {
+      clearTimeout(this.#stopTimer);
+      this.#stopTimer = null;
+    }
+    for (const slot of this.#slots) {
+      try {
+        slot.worker.postMessage({ kind: 'shutdown' });
+      } catch {
+        // worker may already be gone
+      }
+    }
+    // Give workers a moment to drain + self-exit on shutdown messages.
+    await new Promise((r) => setTimeout(r, 50));
+    for (const slot of this.#slots) {
+      try {
+        slot.worker.terminate();
+      } catch {
+        // already terminated
+      }
+    }
   }
 }
