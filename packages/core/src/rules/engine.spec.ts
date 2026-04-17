@@ -274,7 +274,11 @@ describe('MutationEngine', () => {
   });
 
   describe('MAX_ATTEMPTS', () => {
-    it('gives up after 10 failed attempts', () => {
+    it('blacklists rules that return null within a single mutate() call', () => {
+      // When a rule returns null, the engine treats that as a deterministic
+      // "no candidates in this AST" signal and drops the rule from the
+      // candidate pool — so the same null-returning rule is never re-queried
+      // in the same call. This is the dedup optimization (PERFORMANCE #2).
       let attempts = 0;
       const countingNull: Rule = {
         id: 'counting-null',
@@ -287,6 +291,26 @@ describe('MutationEngine', () => {
         },
       };
       const engine = makeEngine(makeRegistry(countingNull));
+      expect(engine.mutate('void foo() {}', 'foo', 'test-target')).toBeNull();
+      expect(attempts).toBe(1);
+    });
+
+    it('retries MAX_ATTEMPTS times when a rule returns a no-op (source unchanged)', () => {
+      // A no-op result (result.source === source) is treated as RNG-dependent —
+      // the rule still has candidates, just picked a non-mutating one. So it
+      // stays in the pool and can be re-picked up to MAX_ATTEMPTS times.
+      let attempts = 0;
+      const noopRule: Rule = {
+        id: 'noop-rule',
+        description: 'Returns the source unchanged',
+        languages: ['c'],
+        defaultWeight: 10,
+        apply(ctx) {
+          attempts++;
+          return { source: ctx.source, location: { line: 1, column: 1 } };
+        },
+      };
+      const engine = makeEngine(makeRegistry(noopRule));
       expect(engine.mutate('void foo() {}', 'foo', 'test-target')).toBeNull();
       expect(attempts).toBe(10);
     });

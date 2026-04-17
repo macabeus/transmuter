@@ -144,24 +144,40 @@ export class MutationEngine {
       nodeFilter: this.#nodeFilter,
     };
 
+    // Track rules that hard-failed (returned null) this call. Such failures
+    // are deterministic given the source — the rule found no candidates in
+    // this AST, so re-picking it within the same #applyOne would run the
+    // same lookup again. Drop it from the candidate pool.
+    let candidates = active;
+
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (candidates.length === 0) break;
+
       const index = this.#adaptiveSelector.selectIndex(
         targetId,
-        active.map((r) => r.rule.id),
+        candidates.map((r) => r.rule.id),
         this.#rng,
       );
-      const { rule } = active[index]!;
+      const { rule } = candidates[index]!;
 
       const tRule = PROFILE ? process.hrtime.bigint() : 0n;
       const result = rule.apply(ctx);
       if (PROFILE) PROFILE_STATS.ruleApplyNs += Number(process.hrtime.bigint() - tRule);
-      if (result !== null && result.source !== source) {
-        // Check avoid regions: reject if mutation touched protected lines
-        if (this.#touchesAvoidRegion(source, result.source)) {
-          continue;
-        }
-        return { source: result.source, ruleId: rule.id, location: result.location };
+
+      if (result === null) {
+        // Hard fail — no candidates in this AST. Skip on future attempts.
+        candidates = candidates.filter((_, i) => i !== index);
+        continue;
       }
+      if (result.source === source) {
+        // Rule made a no-op change (e.g., commutative swap on equal operands)
+        // — could succeed under a different RNG roll, so keep it in the pool.
+        continue;
+      }
+      if (this.#touchesAvoidRegion(source, result.source)) {
+        continue;
+      }
+      return { source: result.source, ruleId: rule.id, location: result.location };
     }
 
     return null;
