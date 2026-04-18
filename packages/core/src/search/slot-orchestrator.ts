@@ -592,13 +592,18 @@ export class SlotOrchestrator {
         // worker may already be gone
       }
     }
-    // Give workers a moment to drain + self-exit on shutdown messages.
+    // Give workers a moment to drain + self-exit on shutdown messages,
+    // then unref so the main process can exit cleanly even if any worker
+    // is still finishing up. We deliberately do NOT call worker.terminate():
+    // Bun's terminate() raises SIGILL on the main process when the worker
+    // has spawned subprocesses or loaded WASM (objdiff-wasm), which our
+    // workers always do.
     await new Promise((r) => setTimeout(r, 50));
     for (const slot of this.#slots) {
       try {
-        slot.worker.terminate();
+        slot.worker.unref();
       } catch {
-        // already terminated
+        // worker may already be gone
       }
     }
   }

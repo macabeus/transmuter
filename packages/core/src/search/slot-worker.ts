@@ -12,8 +12,11 @@
  *   3. Main may post control messages (rules-updated, adaptive-snapshot,
  *      focus-updated, mutation-depth-updated) at any time; we update state and
  *      keep processing jobs.
- *   4. Main posts {kind:'shutdown'} → we abort in-flight compile and let the
- *      worker exit. Main should call worker.terminate() if we don't exit cleanly.
+ *   4. Main posts {kind:'shutdown'} → we abort in-flight compile, destroy the
+ *      compiler (kills child subprocesses), and return. Main calls worker.unref()
+ *      so the host process can exit even if we're still finalizing — see
+ *      slot-orchestrator.#shutdown for why we don't use Worker.terminate() or
+ *      process.exit() here.
  *
  * Module resolution note: this file lives inside @transmuter/core and imports
  * core internals via ~ alias + relative paths, so the Bun Worker constructor
@@ -99,8 +102,9 @@ self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
           await state.compiler.destroy();
           clearParseCache();
         }
-        // Let Bun close the worker on the next tick.
-        setTimeout(() => process.exit(0), 0);
+        // Don't self-exit — main has unref'd this worker and will exit on
+        // its own. process.exit() from a Bun Worker can race with native
+        // module cleanup and SIGILL the main process.
         return;
     }
   } catch (err) {
