@@ -25,6 +25,7 @@ import type {
 } from '~/types.js';
 
 import type {
+  PhaseTimings,
   WorkerInit,
   WorkerJob,
   WorkerOutbound,
@@ -85,6 +86,20 @@ interface SlotStats {
   noMutation: number;
 }
 
+/**
+ * Per-phase wall-time totals, summed across every WorkerResult from every
+ * worker. Units are milliseconds. Compared against the CPU budget
+ * (wall × concurrency) to compute the Permuter-style percentage breakdown.
+ */
+interface PhaseTotals {
+  mutate: number;
+  parse: number;
+  ruleApply: number;
+  dedup: number;
+  compile: number;
+  score: number;
+}
+
 export class SlotOrchestrator {
   #opts: SlotOrchestratorOptions;
   #slots: WorkerSlot[] = [];
@@ -95,6 +110,7 @@ export class SlotOrchestrator {
   #perfectMatchFound = false;
   #resumeWaiters: (() => void)[] = [];
   #slotStats: SlotStats = { compiled: 0, errors: 0, deduped: 0, noMutation: 0 };
+  #phaseTotals: PhaseTotals = { mutate: 0, parse: 0, ruleApply: 0, dedup: 0, compile: 0, score: 0 };
   #mutationDepth: number;
   #nextJobId = 0;
   #stopped = false;
@@ -152,14 +168,49 @@ export class SlotOrchestrator {
     const s = this.#slotStats;
     const totalResults = this.#iteration;
     const cAtt = s.compiled + s.errors;
-    const line = [
+    const summary = [
       `\n[TRANSMUTER_WORKER_PROFILE]`,
       `  wall=${wall.toFixed(2)}s  workers=${this.#opts.concurrency}  iter-total=${totalResults}  iter/s=${(totalResults / wall).toFixed(1)}`,
       `  scored=${s.compiled}  compile-errors=${s.errors}  dedup=${s.deduped}  no-mutation=${s.noMutation}`,
       `  compile-attempts/s=${(cAtt / wall).toFixed(2)}  successful-iter/s=${(s.compiled / wall).toFixed(2)}`,
       `  (compile rate ${((cAtt / totalResults) * 100).toFixed(1)}% of all results; no-mutation ${((s.noMutation / totalResults) * 100).toFixed(1)}%)`,
     ].join('\n');
-    process.stderr.write(line + '\n');
+    process.stderr.write(summary + '\n');
+
+    // Per-phase breakdown — Permuter-style. Percentages are share of total
+    // in-worker work time (mutate + dedup + compile + score, summed across
+    // all workers). This is concurrency-agnostic: it shows where worker time
+    // *goes*, regardless of prefetch interleaving or worker count. Latencies
+    // are averaged over the iterations that actually executed that phase
+    // (e.g. compile only runs on iterations that survived dedup).
+    const p = this.#phaseTotals;
+    const totalWorkMs = p.mutate + p.dedup + p.compile + p.score;
+    const phaseCounts = {
+      mutate: totalResults,
+      dedup: totalResults - s.noMutation,
+      compile: s.compiled + s.errors,
+      score: s.compiled,
+    };
+    const fmt = (ms: number, count: number): string => {
+      const pct = totalWorkMs > 0 ? (ms / totalWorkMs) * 100 : 0;
+      const avg = count > 0 ? ms / count : 0;
+      return `${(ms / 1000).toFixed(2)}s (${pct.toFixed(1)}%)  avg=${avg.toFixed(2)}ms × ${count}`;
+    };
+    const breakdown = [
+      `  per-phase totals (sum across all workers, share of in-worker work time):`,
+      `    mutate    = ${fmt(p.mutate, phaseCounts.mutate)}  [parse=${(p.parse / 1000).toFixed(2)}s, ruleApply=${(p.ruleApply / 1000).toFixed(2)}s]`,
+      `    dedup     = ${fmt(p.dedup, phaseCounts.dedup)}`,
+      `    compile   = ${fmt(p.compile, phaseCounts.compile)}`,
+      `    score     = ${fmt(p.score, phaseCounts.score)}`,
+      `  total work time (in-worker, summed across slots): ${(totalWorkMs / 1000).toFixed(2)}s` +
+        ` over ${(wall * this.#opts.concurrency).toFixed(2)}s of cpu-budget` +
+        ` (saturation=${((totalWorkMs / 1000 / (wall * this.#opts.concurrency)) * 100).toFixed(0)}%${
+          totalWorkMs / 1000 > wall * this.#opts.concurrency
+            ? ' — exceeds 100% because each worker overlaps multiple jobs via prefetch'
+            : ''
+        })`,
+    ].join('\n');
+    process.stderr.write(breakdown + '\n');
   }
 
   getIteration(): number {
@@ -438,6 +489,7 @@ export class SlotOrchestrator {
   }
 
   #handleResult(result: WorkerResult): void {
+    this.#accumulatePhases(result.timings);
     switch (result.kind) {
       case 'no-mutation':
         this.#slotStats.noMutation++;
@@ -547,6 +599,16 @@ export class SlotOrchestrator {
         return;
       }
     }
+  }
+
+  #accumulatePhases(t: PhaseTimings): void {
+    const p = this.#phaseTotals;
+    p.mutate += t.mutate;
+    p.parse += t.parse;
+    p.ruleApply += t.ruleApply;
+    if (t.dedup !== undefined) p.dedup += t.dedup;
+    if (t.compile !== undefined) p.compile += t.compile;
+    if (t.score !== undefined) p.score += t.score;
   }
 
   #emit(event: MutationSearchEvent): void {

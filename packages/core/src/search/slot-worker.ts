@@ -28,11 +28,12 @@ import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
 import { Rng } from '~/rng.js';
 import { AdaptiveSelector } from '~/rules/adaptive-selector.js';
 import { builtInRules } from '~/rules/built-in/index.js';
-import { MutationEngine } from '~/rules/engine.js';
+import { MutationEngine, PROFILE_STATS } from '~/rules/engine.js';
 import { RuleRegistry } from '~/rules/registry.js';
 import { Scorer } from '~/scoring/scorer.js';
 
 import type {
+  PhaseTimings,
   WorkerInbound,
   WorkerInit,
   WorkerJob,
@@ -188,6 +189,12 @@ async function handleInit(msg: WorkerInit): Promise<void> {
 }
 
 async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
+  // Sample engine PROFILE_STATS deltas so the orchestrator can split mutate
+  // into parse vs ruleApply. Both counters are updated only when
+  // TRANSMUTER_PROFILE=1 is set; otherwise they remain 0 and report as 0 ms.
+  const parseNs0 = PROFILE_STATS.parseNs;
+  const ruleApplyNs0 = PROFILE_STATS.ruleApplyNs;
+
   const tMutate0 = performance.now();
   const mutation = s.engine.mutate(
     job.candidateSource,
@@ -197,14 +204,30 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
     job.breakdown,
   );
   const mutateMs = performance.now() - tMutate0;
+  const parseMs = (PROFILE_STATS.parseNs - parseNs0) / 1e6;
+  const ruleApplyMs = (PROFILE_STATS.ruleApplyNs - ruleApplyNs0) / 1e6;
 
   if (!mutation) {
-    post({ kind: 'no-mutation', jobId: job.jobId, mutationTargetId: job.mutationTargetId });
+    post({
+      kind: 'no-mutation',
+      jobId: job.jobId,
+      mutationTargetId: job.mutationTargetId,
+      timings: { mutate: mutateMs, parse: parseMs, ruleApply: ruleApplyMs },
+    });
     return;
   }
 
-  if (s.deduplicator.checkAndAdd(mutation.source)) {
-    post({ kind: 'dedup', jobId: job.jobId, mutationTargetId: job.mutationTargetId });
+  const tDedup0 = performance.now();
+  const isDup = s.deduplicator.checkAndAdd(mutation.source);
+  const dedupMs = performance.now() - tDedup0;
+
+  if (isDup) {
+    post({
+      kind: 'dedup',
+      jobId: job.jobId,
+      mutationTargetId: job.mutationTargetId,
+      timings: { mutate: mutateMs, parse: parseMs, ruleApply: ruleApplyMs, dedup: dedupMs },
+    });
     return;
   }
 
@@ -215,6 +238,13 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   const compileMs = performance.now() - tCompile0;
 
   if (!compileResult.success) {
+    const timings: PhaseTimings = {
+      mutate: mutateMs,
+      parse: parseMs,
+      ruleApply: ruleApplyMs,
+      dedup: dedupMs,
+      compile: compileMs,
+    };
     post({
       kind: 'compile-error',
       jobId: job.jobId,
@@ -222,7 +252,7 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
       ruleId,
       location: mutation.location,
       error: compileResult.error,
-      timings: { mutate: mutateMs, compile: compileMs },
+      timings,
     });
     return;
   }
@@ -241,7 +271,13 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
       ruleId,
       location: mutation.location,
       error: 'scorer returned null (function symbol not found)',
-      timings: { mutate: mutateMs, compile: compileMs },
+      timings: {
+        mutate: mutateMs,
+        parse: parseMs,
+        ruleApply: ruleApplyMs,
+        dedup: dedupMs,
+        compile: compileMs,
+      },
     });
     return;
   }
@@ -257,7 +293,14 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
     breakdown: scored.breakdown,
     assembly: scored.assembly,
     assemblyDiff: scored.assemblyDiff,
-    timings: { mutate: mutateMs, compile: compileMs, score: scoreMs },
+    timings: {
+      mutate: mutateMs,
+      parse: parseMs,
+      ruleApply: ruleApplyMs,
+      dedup: dedupMs,
+      compile: compileMs,
+      score: scoreMs,
+    },
   };
   post(result);
 }

@@ -154,10 +154,10 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
         expect(result.ruleId).toBeTypeOf('string');
         expect(result.score).toBeTypeOf('number');
         expect(result.assembly.length).toBeGreaterThan(0);
-        expect(result.timings.compile).toBeGreaterThan(0);
-        expect(result.timings.score).toBeGreaterThan(0);
+        expect(result.timings.compile ?? 0).toBeGreaterThan(0);
+        expect(result.timings.score ?? 0).toBeGreaterThan(0);
       } else if (result.kind === 'compile-error') {
-        expect(result.timings.compile).toBeGreaterThan(0);
+        expect(result.timings.compile ?? 0).toBeGreaterThan(0);
       }
 
       expect(errorSpy).toEqual([]);

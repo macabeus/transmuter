@@ -70,17 +70,35 @@ export type WorkerControl =
 /** Main → worker message envelope. */
 export type WorkerInbound = WorkerInit | WorkerJob | WorkerControl;
 
+/**
+ * Per-job phase timings (milliseconds). Always populated for every phase the
+ * job actually reached. `parse` and `ruleApply` are sub-phases of `mutate` and
+ * are only non-zero when `TRANSMUTER_PROFILE=1` (engine instrumentation is
+ * env-gated to avoid hot-path overhead). The orchestrator sums these across
+ * all workers for the Permuter-style profile breakdown.
+ */
+export interface PhaseTimings {
+  readonly mutate: number;
+  readonly parse: number;
+  readonly ruleApply: number;
+  readonly dedup?: number;
+  readonly compile?: number;
+  readonly score?: number;
+}
+
 /** Worker → main result for a WorkerJob. */
 export type WorkerResult =
   | {
       readonly kind: 'no-mutation';
       readonly jobId: number;
       readonly mutationTargetId: string;
+      readonly timings: PhaseTimings;
     }
   | {
       readonly kind: 'dedup';
       readonly jobId: number;
       readonly mutationTargetId: string;
+      readonly timings: PhaseTimings;
     }
   | {
       readonly kind: 'compile-error';
@@ -89,7 +107,7 @@ export type WorkerResult =
       readonly ruleId: string;
       readonly location: MutationLocation;
       readonly error: string;
-      readonly timings: { readonly mutate: number; readonly compile: number };
+      readonly timings: PhaseTimings;
     }
   | {
       readonly kind: 'scored';
@@ -102,7 +120,7 @@ export type WorkerResult =
       readonly breakdown: DiffBreakdown;
       readonly assembly: string;
       readonly assemblyDiff: string;
-      readonly timings: { readonly mutate: number; readonly compile: number; readonly score: number };
+      readonly timings: PhaseTimings;
     };
 
 /** Worker → main lifecycle / log events (not tied to a specific job). */
