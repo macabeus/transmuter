@@ -4,11 +4,11 @@
  * Pool, the authoritative AdaptiveSelector, event emission, and HTTP API side
  * effects.
  *
- * Determinism: with `concurrency === 1` + a fixed seed + `--max-iterations`,
+ * Determinism: with `concurrency === 1` + a fixed seed + `--max-compiles`,
  * runs are bit-identical across invocations. AdaptiveSelector rebroadcast is
- * iteration-counted (not wall-clock) and skipped entirely for the single-
- * worker case. Above N=1, worker-result ordering depends on real-time
- * scheduling; use `--concurrency 1` for reproducibility tests.
+ * iteration-counted (not wall-clock) so seeded runs stay reproducible. Above
+ * N=1, worker-result ordering depends on real-time scheduling; use
+ * `--concurrency 1` for reproducibility tests.
  *
  * See BUN_WORKERS_PLAN.md §3 and §6 for the architecture.
  */
@@ -50,20 +50,24 @@ export interface SlotOrchestratorOptions {
   compilerCwd: string;
   targetObjectPath: string;
   diffSettings: Record<string, string>;
-  maxIterations: number;
+  /**
+   * Stop after this many compile attempts (compiled + compile-errored
+   * results). No-mutation and dedup early-exits do NOT count. Approximate
+   * because in-flight prefetched jobs may overshoot.
+   */
+  maxCompiles: number;
   timeoutMs: number;
   statsInterval: number;
   onEvent: MutationSearchEventHandler;
   signal: AbortSignal;
   candidateFilter?: (source: string) => boolean;
   scoreTransform?: (source: string, asmResult: AssemblyScoreResult) => number;
-  maxUnproductiveIterations?: number;
+  maxUnproductiveResults?: number;
   /**
    * Rebroadcast the authoritative AdaptiveSelector snapshot to all workers
    * every N results. Iteration-counted rather than wall-clock-timed so that
-   * `--concurrency 1 --seed X --max-iterations Y` is bit-identical across
-   * runs. Default: 100. Skipped entirely when `concurrency === 1` (single
-   * worker is already in sync with main via per-result records).
+   * `--concurrency 1 --seed X --max-compiles Y` is bit-identical across
+   * runs. Default: 100.
    */
   adaptiveRebroadcastEvery?: number;
   prefetchDepth?: number;
@@ -224,6 +228,11 @@ export class SlotOrchestrator {
 
   getCompiledCount(): number {
     return this.#slotStats.compiled;
+  }
+
+  /** Compile attempts so far (compiled + compile-errored). Tracks `maxCompiles`. */
+  getCompileAttempts(): number {
+    return this.#slotStats.compiled + this.#slotStats.errors;
   }
 
   getElapsed(): number {
@@ -438,13 +447,17 @@ export class SlotOrchestrator {
     if (this.#stopped) return true;
     if (this.#perfectMatchFound) return true;
     if (this.#opts.signal.aborted) return true;
-    if (this.#iteration >= this.#opts.maxIterations) return true;
+    // maxCompiles counts attempts that actually reached `compiler.compile()` —
+    // i.e. not killed by no-mutation or dedup. This matches Permuter and
+    // matches what users almost certainly mean when they cap a run.
+    const compileAttempts = this.#slotStats.compiled + this.#slotStats.errors;
+    if (compileAttempts >= this.#opts.maxCompiles) return true;
     if (Date.now() - this.#startTime >= this.#opts.timeoutMs) return true;
     if (
-      this.#opts.maxUnproductiveIterations !== undefined &&
+      this.#opts.maxUnproductiveResults !== undefined &&
       this.#iteration > 0 &&
       this.#slotStats.compiled === 0 &&
-      this.#iteration >= this.#opts.maxUnproductiveIterations
+      this.#iteration >= this.#opts.maxUnproductiveResults
     ) {
       return true;
     }

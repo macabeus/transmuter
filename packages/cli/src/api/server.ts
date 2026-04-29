@@ -1088,7 +1088,7 @@ const REFINE_EXTRA_ENDPOINTS: EndpointDescription[] = [
   {
     method: 'GET',
     path: '/config',
-    description: 'Refinement config: functionName, guidelineId, concurrency, maxIterationsPerViolation, etc.',
+    description: 'Refinement config: functionName, guidelineId, concurrency, maxCompilesPerViolation, etc.',
   },
 ];
 

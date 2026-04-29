@@ -96,7 +96,7 @@ export interface SessionConfig {
   language?: Language;
   profile?: string;
   concurrency: number;
-  maxIterations: number;
+  maxCompiles: number;
   timeoutMs: number;
   seed: number;
   mutationDepth: number;
@@ -191,7 +191,7 @@ export interface RefinementConfig {
   profile?: string;
   guidelineId: string;
   concurrency: number;
-  maxIterationsPerViolation: number;
+  maxCompilesPerViolation: number;
   timeoutMsPerViolation: number;
   seed: number;
 }

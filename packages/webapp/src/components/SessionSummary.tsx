@@ -68,7 +68,7 @@ export function SessionSummaryView({
           <ConfigItem label="Profile" value={config.profile ?? 'auto'} />
           <ConfigItem label="Seed" value={String(config.seed)} />
           <ConfigItem label="Concurrency" value={String(config.concurrency)} />
-          <ConfigItem label="Max Iterations" value={formatNumber(config.maxIterations)} />
+          <ConfigItem label="Max Compiles" value={formatNumber(config.maxCompiles)} />
           <ConfigItem label="Timeout" value={formatDuration(config.timeoutMs)} />
           <ConfigItem label="Depth" value={String(config.mutationDepth)} />
           {summary.completionReason && <ConfigItem label="Stopped" value={summary.completionReason} />}

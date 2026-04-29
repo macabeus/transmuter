@@ -50,7 +50,7 @@ export function RefinementSummary({ report }: { report: RefinementReport }): Rea
           <ConfigItem label="Guideline" value={config.guidelineId} />
           {config.profile && <ConfigItem label="Profile" value={config.profile} />}
           <ConfigItem label="Concurrency" value={String(config.concurrency)} />
-          <ConfigItem label="Max iter/violation" value={config.maxIterationsPerViolation.toLocaleString()} />
+          <ConfigItem label="Max compiles/violation" value={config.maxCompilesPerViolation.toLocaleString()} />
           <ConfigItem label="Timeout/violation" value={formatDuration(config.timeoutMsPerViolation)} />
           <ConfigItem label="Seed" value={String(config.seed)} />
         </div>

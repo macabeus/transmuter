@@ -305,7 +305,7 @@ export class RefinementStore {
         language: 'c' as const,
         guidelineId: this.#guidelineId,
         concurrency: 0,
-        maxIterationsPerViolation: 0,
+        maxCompilesPerViolation: 0,
         timeoutMsPerViolation: 0,
         seed: 0,
       },

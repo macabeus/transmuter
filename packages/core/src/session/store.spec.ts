@@ -10,7 +10,7 @@ function makeConfig(overrides?: Partial<SessionConfig>): SessionConfig {
     compilerCommand: 'gcc {{inputPath}} -o {{outputPath}}',
     language: 'c',
     concurrency: 2,
-    maxIterations: 1000,
+    maxCompiles: 1000,
     timeoutMs: 60000,
     seed: 42,
     mutationDepth: 1,

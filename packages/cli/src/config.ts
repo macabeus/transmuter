@@ -12,7 +12,7 @@ export interface TransmuterToolConfig {
   compiler?: string;
   profile?: string;
   concurrency?: number;
-  maxIterations?: number;
+  maxCompiles?: number;
   timeoutMs?: number;
   noReduce?: boolean;
   isolate?: boolean;

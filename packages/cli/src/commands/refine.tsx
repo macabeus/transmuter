@@ -33,7 +33,7 @@ export interface RefineArgs {
   profile?: string;
   guideline?: string;
   concurrency?: number;
-  maxIterations?: number;
+  maxCompiles?: number;
   timeout?: number;
   seed?: number;
   config?: string;
@@ -625,7 +625,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
           profile: args.profile ?? transmuterConfig?.profile,
           guidelineId: args.guideline!,
           concurrency,
-          maxIterationsPerViolation: args.maxIterations ?? transmuterConfig?.maxIterations,
+          maxCompilesPerViolation: args.maxCompiles ?? transmuterConfig?.maxCompiles,
           timeoutMsPerViolation: args.timeout ?? transmuterConfig?.timeoutMs,
           seed,
           diffSettings: transmuterConfig?.diffSettings,

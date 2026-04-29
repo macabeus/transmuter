@@ -403,7 +403,7 @@ export class Refiner {
 
     const seed = this.#opts.seed ?? Math.floor(Math.random() * 0xffffffff);
     const concurrency = this.#opts.concurrency ?? Math.min(os.cpus().length, 4);
-    const maxIterPerViolation = this.#opts.maxIterationsPerViolation ?? Infinity;
+    const maxCompilesPerViolation = this.#opts.maxCompilesPerViolation ?? Infinity;
     const timeoutPerViolation = this.#opts.timeoutMsPerViolation ?? Infinity;
 
     const config: RefinementConfig = {
@@ -414,7 +414,7 @@ export class Refiner {
       profile: this.#opts.profile,
       guidelineId: this.#opts.guidelineId,
       concurrency,
-      maxIterationsPerViolation: maxIterPerViolation,
+      maxCompilesPerViolation,
       timeoutMsPerViolation: timeoutPerViolation,
       seed,
     };
@@ -500,7 +500,7 @@ export class Refiner {
         guideline,
         seed,
         concurrency,
-        maxIterPerViolation,
+        maxCompilesPerViolation,
         timeoutPerViolation,
         emit,
       );
@@ -575,7 +575,7 @@ export class Refiner {
           guideline,
           seed,
           concurrency,
-          maxIterPerViolation,
+          maxCompilesPerViolation,
           timeoutPerViolation,
           emit,
         );
@@ -617,7 +617,7 @@ export class Refiner {
     guideline: Guideline,
     seed: number,
     concurrency: number,
-    maxIterPerViolation: number,
+    maxCompilesPerViolation: number,
     timeoutPerViolation: number,
     emit: (event: RefinerEvent) => void,
   ): Promise<ExplorationResult[]> {
@@ -643,7 +643,7 @@ export class Refiner {
         guideline,
         seed + i + 1,
         slotsPerViolation,
-        maxIterPerViolation,
+        maxCompilesPerViolation,
         timeoutPerViolation,
         emit,
       );
@@ -657,7 +657,7 @@ export class Refiner {
     guideline: Guideline,
     seed: number,
     concurrency: number,
-    maxIterations: number,
+    maxCompiles: number,
     timeoutMs: number,
     emit: (event: RefinerEvent) => void,
   ): Promise<ExplorationResult> {
@@ -795,7 +795,7 @@ export class Refiner {
         sourcePrefix: this.#opts.sourcePrefix,
         profile: this.#opts.profile,
         concurrency,
-        maxIterations,
+        maxCompiles,
         timeoutMs,
         seed,
         // Lateral forks let the permuter explore code plateaus where intermediate
@@ -806,7 +806,7 @@ export class Refiner {
         diffSettings: this.#opts.diffSettings,
         signal: this.#abortController.signal,
         candidateFilter,
-        maxUnproductiveIterations: 100_000,
+        maxUnproductiveResults: 100_000,
         focusConstraints,
         onEvent(event: MutationSearchEvent) {
           subStore.push(event);
@@ -847,7 +847,7 @@ export class Refiner {
         language: this.#opts.language ?? 'c',
         profile: this.#opts.profile,
         concurrency,
-        maxIterations,
+        maxCompiles,
         timeoutMs,
         seed,
         mutationDepth: 1,
@@ -928,7 +928,7 @@ export class Refiner {
     guideline: Guideline,
     seed: number,
     concurrency: number,
-    maxIterPerViolation: number,
+    maxCompilesPerViolation: number,
     timeoutPerViolation: number,
     emit: (event: RefinerEvent) => void,
   ): Promise<{
@@ -1050,7 +1050,7 @@ export class Refiner {
         sourcePrefix: this.#opts.sourcePrefix,
         profile: this.#opts.profile,
         concurrency,
-        maxIterations: maxIterPerViolation,
+        maxCompiles: maxCompilesPerViolation,
         timeoutMs: timeoutPerViolation,
         seed: rng.int(0, 0xffffffff),
         disabledRules: guideline.disabledRules,

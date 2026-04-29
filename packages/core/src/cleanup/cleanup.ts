@@ -49,8 +49,8 @@ export interface CleanupOptions {
   profile?: string;
   /** Number of concurrent slots for Phase 2 (default: cpu count, max 4) */
   concurrency?: number;
-  /** Max iterations for Phase 2 smell permutation (default: 50000) */
-  maxIterations?: number;
+  /** Max compile attempts for Phase 2 smell permutation (default: 50000) */
+  maxCompiles?: number;
   /** Max time for Phase 2 in ms (default: 60000) */
   timeoutMs?: number;
   /** RNG seed */
@@ -335,7 +335,7 @@ export class Cleanup {
     emit({ type: 'phase2-started', smellScore: currentSmell });
 
     const concurrency = this.#opts.concurrency ?? Math.min(os.cpus().length, 4);
-    const maxIterations = this.#opts.maxIterations ?? 50_000;
+    const maxCompiles = this.#opts.maxCompiles ?? 50_000;
     const timeoutMs = this.#opts.timeoutMs ?? 60_000;
     const seed = this.#opts.seed ?? Math.floor(Math.random() * 0xffffffff);
     const functionName = this.#opts.functionName;
@@ -369,7 +369,7 @@ export class Cleanup {
       profile: this.#opts.profile,
       diffSettings: this.#opts.diffSettings,
       concurrency,
-      maxIterations,
+      maxCompiles,
       timeoutMs,
       seed,
       mutationDepth: 2,

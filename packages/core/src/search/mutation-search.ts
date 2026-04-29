@@ -389,14 +389,14 @@ export class MutationSearch {
         compilerCwd: this.#opts.cwd ?? process.cwd(),
         targetObjectPath: this.#opts.targetObjectPath,
         diffSettings: this.#opts.diffSettings ?? {},
-        maxIterations: this.#opts.maxIterations ?? Infinity,
+        maxCompiles: this.#opts.maxCompiles ?? Infinity,
         timeoutMs: this.#opts.timeoutMs ?? Infinity,
         statsInterval: DEFAULT_STATS_INTERVAL,
         onEvent: emit,
         signal: this.#abortController.signal,
         candidateFilter: this.#opts.candidateFilter,
         scoreTransform: this.#opts.scoreTransform,
-        maxUnproductiveIterations: this.#opts.maxUnproductiveIterations,
+        maxUnproductiveResults: this.#opts.maxUnproductiveResults,
       });
 
       await this.#orchestrator.run();
@@ -409,14 +409,14 @@ export class MutationSearch {
       } else if (this.#abortController.signal.aborted) {
         reason = 'aborted';
       } else if (
-        this.#opts.maxIterations !== undefined &&
-        this.#orchestrator.getIteration() >= this.#opts.maxIterations
+        this.#opts.maxCompiles !== undefined &&
+        this.#orchestrator.getCompileAttempts() >= this.#opts.maxCompiles
       ) {
-        reason = 'max-iterations';
+        reason = 'max-compiles';
       } else if (
-        this.#opts.maxUnproductiveIterations !== undefined &&
+        this.#opts.maxUnproductiveResults !== undefined &&
         this.#orchestrator.getCompiledCount() === 0 &&
-        this.#orchestrator.getIteration() >= this.#opts.maxUnproductiveIterations
+        this.#orchestrator.getIteration() >= this.#opts.maxUnproductiveResults
       ) {
         reason = 'exhausted';
       } else {

@@ -32,10 +32,12 @@ Match Options:
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
   --concurrency <n>    Number of concurrent slots (default: min(cpus, 4))
                        Each slot runs in its own Bun Worker thread
-  --max-iterations <n> Maximum iterations
+  --max-compiles <n>   Maximum compile attempts before stopping. Counts only
+                       mutations that survive dedup and reach the compiler;
+                       no-mutation/dedup early-exits don't count.
   --timeout <ms>       Maximum time in milliseconds
   --seed <n>           RNG seed for reproducibility (use with --concurrency 1
-                       and --max-iterations for bit-identical runs)
+                       and --max-compiles for bit-identical runs)
   --no-reduce          Skip source reduction before permuting
   --isolate            Strip non-target, non-inline function bodies and
                        #defines before reduce/match — useful on preprocessed
@@ -55,7 +57,8 @@ Refine Options:
   --cwd <path>         Working directory for compiler
   --profile <id>       Compiler profile
   --concurrency <n>    Total concurrent slots (default: min(cpus, 4))
-  --max-iterations <n> Max iterations per violation (default: unlimited)
+  --max-compiles <n>   Max compile attempts per violation (default: unlimited)
+                       Counts only mutations that reach the compiler.
   --timeout <ms>       Max time per violation in ms (default: unlimited)
   --seed <n>           RNG seed for reproducibility
   --skip-merge         Only run Phase 1 exploration, skip merge
@@ -92,7 +95,7 @@ async function main(): Promise<void> {
           cwd: { type: 'string' },
           profile: { type: 'string' },
           concurrency: { type: 'string' },
-          'max-iterations': { type: 'string' },
+          'max-compiles': { type: 'string' },
           timeout: { type: 'string' },
           seed: { type: 'string' },
           'no-reduce': { type: 'boolean' },
@@ -120,7 +123,7 @@ async function main(): Promise<void> {
         cwd: values.cwd,
         profile: values.profile,
         concurrency: values.concurrency ? Number(values.concurrency) : undefined,
-        maxIterations: values['max-iterations'] ? Number(values['max-iterations']) : undefined,
+        maxCompiles: values['max-compiles'] ? Number(values['max-compiles']) : undefined,
         timeout: values.timeout ? Number(values.timeout) : undefined,
         seed: values.seed ? Number(values.seed) : undefined,
         noReduce: values['no-reduce'],
@@ -152,7 +155,7 @@ async function main(): Promise<void> {
           cwd: { type: 'string' },
           profile: { type: 'string' },
           concurrency: { type: 'string' },
-          'max-iterations': { type: 'string' },
+          'max-compiles': { type: 'string' },
           timeout: { type: 'string' },
           seed: { type: 'string' },
           'skip-merge': { type: 'boolean' },
@@ -178,7 +181,7 @@ async function main(): Promise<void> {
         cwd: values.cwd,
         profile: values.profile,
         concurrency: values.concurrency ? Number(values.concurrency) : undefined,
-        maxIterations: values['max-iterations'] ? Number(values['max-iterations']) : undefined,
+        maxCompiles: values['max-compiles'] ? Number(values['max-compiles']) : undefined,
         timeout: values.timeout ? Number(values.timeout) : undefined,
         seed: values.seed ? Number(values.seed) : undefined,
         skipMerge: values['skip-merge'],

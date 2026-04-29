@@ -35,7 +35,7 @@ export interface MatchArgs {
   cwd?: string;
   profile?: string;
   concurrency?: number;
-  maxIterations?: number;
+  maxCompiles?: number;
   timeout?: number;
   seed?: number;
   noReduce?: boolean;
@@ -410,7 +410,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           process.exit(1);
         }
         const concurrency = rawConcurrency ?? Math.min(os.cpus().length, 4);
-        const maxIterations = args.maxIterations ?? transmuterConfig?.maxIterations;
+        const maxCompiles = args.maxCompiles ?? transmuterConfig?.maxCompiles;
         const timeoutMs = args.timeout ?? transmuterConfig?.timeoutMs;
         const mutationDepth = args.depth ?? transmuterConfig?.mutationDepth;
 
@@ -430,7 +430,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           language,
           profile: resolvedProfile,
           concurrency,
-          maxIterations: maxIterations ?? Infinity,
+          maxCompiles: maxCompiles ?? Infinity,
           timeoutMs: timeoutMs ?? Infinity,
           seed,
           mutationDepth: mutationDepth ?? 1,
@@ -449,7 +449,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           cwd: args.cwd ?? process.cwd(),
           profile: resolvedProfile,
           concurrency,
-          maxIterations,
+          maxCompiles,
           timeoutMs,
           seed,
           mutationDepth,

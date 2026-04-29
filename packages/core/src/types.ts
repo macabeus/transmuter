@@ -318,11 +318,21 @@ export interface MutationSearchOptions {
    * Number of concurrent slots. Each slot runs in its own Bun Worker thread
    * (parallel CPU + parallel compile subprocesses). Default:
    * `min(os.cpus().length, 4)`. Use `concurrency: 1` with a fixed `seed` and
-   * `maxIterations` for bit-identical reproducible runs.
+   * `maxCompiles` for bit-identical reproducible runs.
    */
   concurrency?: number;
-  /** Maximum iterations before stopping (default: Infinity) */
-  maxIterations?: number;
+  /**
+   * Maximum compile attempts before stopping (default: Infinity). One
+   * attempt = one mutation that survived dedup and reached `compiler.compile()`.
+   * Mutations that early-exit on no-mutation or dedup do NOT count against
+   * this budget. Matches Permuter's per-compile counting (Permuter has no
+   * dedup early-exit, so its iterations are always compile attempts).
+   *
+   * In-flight overshoot: with prefetch, up to `concurrency × prefetchDepth`
+   * jobs can complete after the threshold is crossed, so the actual stop
+   * point is approximate.
+   */
+  maxCompiles?: number;
   /** Maximum time in ms before stopping (default: Infinity) */
   timeoutMs?: number;
   /** Seed for deterministic reproduction (default: random) */
@@ -365,11 +375,14 @@ export interface MutationSearchOptions {
   /** Options for adaptive per-target rule selection (Thompson Sampling). Always enabled. */
   adaptiveSelection?: AdaptiveSelectorOptions;
   /**
-   * Maximum iterations without a single compilation before stopping.
-   * Useful when a candidateFilter rejects all mutations (e.g., refine mode for asm constructs),
-   * causing the loop to spin indefinitely. Default: undefined (no limit).
+   * Maximum worker results without producing a single fork before stopping.
+   * Useful when a candidateFilter rejects all mutations (e.g., refine mode
+   * for asm constructs) and no compile would have succeeded anyway. This is
+   * counted in raw worker results (including dedup/no-mutation) since the
+   * concern is "engine spinning forever without traction" — not compile work.
+   * Default: undefined (no limit).
    */
-  maxUnproductiveIterations?: number;
+  maxUnproductiveResults?: number;
   /**
    * Automatic pruning and compaction policy. Periodically prunes stale targets
    * (no fork in many attempts) and compacts dead-end subtrees into supernodes.
@@ -414,7 +427,7 @@ export interface MutationSearchResult {
   /** Total wall-clock time in ms */
   readonly elapsed: number;
   /** Reason the job ended */
-  readonly reason: 'perfect-match' | 'max-iterations' | 'timeout' | 'aborted' | 'exhausted';
+  readonly reason: 'perfect-match' | 'max-compiles' | 'timeout' | 'aborted' | 'exhausted';
 }
 
 export interface MutationSearchState {
@@ -571,7 +584,7 @@ export interface SessionConfig {
   readonly language: Language;
   readonly profile?: string;
   readonly concurrency: number;
-  readonly maxIterations: number;
+  readonly maxCompiles: number;
   readonly timeoutMs: number;
   readonly seed: number;
   readonly mutationDepth: number;
@@ -677,7 +690,7 @@ export interface RefinementConfig {
   readonly profile?: string;
   readonly guidelineId: string;
   readonly concurrency: number;
-  readonly maxIterationsPerViolation: number;
+  readonly maxCompilesPerViolation: number;
   readonly timeoutMsPerViolation: number;
   readonly seed: number;
 }
@@ -809,8 +822,8 @@ export interface RefinerOptions {
   guidelineId: string;
   /** Total concurrent slots (split across violations in Phase 1) */
   concurrency?: number;
-  /** Max iterations per violation (default: Infinity) */
-  maxIterationsPerViolation?: number;
+  /** Max compile attempts per violation (default: Infinity) */
+  maxCompilesPerViolation?: number;
   /** Max time per violation in ms (default: Infinity) */
   timeoutMsPerViolation?: number;
   /** RNG seed */

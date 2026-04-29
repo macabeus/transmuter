@@ -35,7 +35,7 @@ const EMPTY_CONFIG: SessionConfig = {
   compilerCommand: '',
   language: 'c',
   concurrency: 0,
-  maxIterations: 0,
+  maxCompiles: 0,
   timeoutMs: 0,
   seed: 0,
   mutationDepth: 1,
