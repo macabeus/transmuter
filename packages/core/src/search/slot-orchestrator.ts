@@ -127,31 +127,36 @@ export class SlotOrchestrator {
     this.#startTime = Date.now();
     this.#iteration = 0;
 
-    this.#spawnWorkers();
-    await Promise.all(this.#slots.map((s) => s.ready));
-
-    if (this.#opts.signal.aborted) {
-      await this.#shutdown();
-      return;
-    }
-
-    this.#opts.signal.addEventListener(
-      'abort',
-      () => {
-        this.#stopped = true;
-        this.#wakeRunLoop();
-      },
-      { once: true },
-    );
-
-    if (Number.isFinite(this.#opts.timeoutMs)) {
-      this.#stopTimer = setTimeout(() => {
-        this.#stopped = true;
-        this.#wakeRunLoop();
-      }, this.#opts.timeoutMs);
-    }
-
+    // Spawn + init + run loop all live inside a single try/finally so that
+    // #shutdown() reliably tears down every spawned worker, even if init
+    // fails partway through. Without this, a fatal error in any worker's
+    // handleInit (e.g. Scorer.init() throwing) would propagate out of run()
+    // and leak the other workers — the host process would stay alive on the
+    // event loop until something forces it down.
     try {
+      this.#spawnWorkers();
+      await Promise.all(this.#slots.map((s) => s.ready));
+
+      if (this.#opts.signal.aborted) {
+        return;
+      }
+
+      this.#opts.signal.addEventListener(
+        'abort',
+        () => {
+          this.#stopped = true;
+          this.#wakeRunLoop();
+        },
+        { once: true },
+      );
+
+      if (Number.isFinite(this.#opts.timeoutMs)) {
+        this.#stopTimer = setTimeout(() => {
+          this.#stopped = true;
+          this.#wakeRunLoop();
+        }, this.#opts.timeoutMs);
+      }
+
       await this.#runLoop();
     } finally {
       // Emit profile BEFORE shutting workers down; on some Bun versions the
@@ -449,6 +454,14 @@ export class SlotOrchestrator {
   #onMessage(slot: WorkerSlot, msg: WorkerOutbound): void {
     if (msg.kind === 'ready' || msg.kind === 'error') {
       if (msg.kind === 'error') {
+        // If the error is tied to an in-flight job, free the slot for it.
+        // Otherwise the prefetch budget leaks one entry per job-time error
+        // and the slot eventually stops accepting work.
+        if (msg.jobId !== undefined) {
+          slot.inflight.delete(msg.jobId);
+          slot.pending = Math.max(0, slot.pending - 1);
+          this.#wakeRunLoop();
+        }
         this.#emit({ type: 'error', message: `worker ${msg.slotId} error: ${msg.error}` });
       }
       return;

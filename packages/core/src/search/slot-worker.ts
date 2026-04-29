@@ -109,9 +109,14 @@ self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
         return;
     }
   } catch (err) {
+    // Include the originating jobId on job-time errors so the orchestrator
+    // can clear that job's inflight entry and free its prefetch slot.
+    // Without this, repeated job-time throws starve the slot of work because
+    // slot.pending never decrements past errors.
     post({
       kind: 'error',
       slotId: state?.slotId ?? -1,
+      jobId: msg.kind === 'job' ? msg.jobId : undefined,
       error: err instanceof Error ? (err.stack ?? err.message) : String(err),
       fatal: msg.kind === 'init',
     });
