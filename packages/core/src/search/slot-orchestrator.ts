@@ -470,18 +470,16 @@ export class SlotOrchestrator {
       this.#emitStats(this.#iteration);
     }
 
-    // Iteration-counted adaptive rebroadcast. Keeps worker Thompson state in
-    // sync with main's authoritative copy without wall-clock timing (which
-    // would break determinism under fixed --seed). Single-worker sessions
-    // skip the broadcast — the worker's local selector already mirrors main
-    // because main records on every result in the exact order the worker
-    // produced them.
-    if (this.#opts.concurrency > 1) {
-      const every = this.#opts.adaptiveRebroadcastEvery ?? 100;
-      if (every > 0 && this.#iteration - this.#lastRebroadcastIteration >= every) {
-        this.#lastRebroadcastIteration = this.#iteration;
-        this.#broadcastAdaptiveSnapshot();
-      }
+    // Iteration-counted adaptive rebroadcast. Keeps each worker's Thompson
+    // state in sync with main's authoritative copy without wall-clock timing
+    // (which would break determinism under fixed --seed). Workers don't
+    // record locally — main owns the canonical selector — so without this
+    // rebroadcast the worker's selector stays at its initial snapshot and
+    // rule selection becomes non-adaptive. Runs for all concurrency values.
+    const every = this.#opts.adaptiveRebroadcastEvery ?? 100;
+    if (every > 0 && this.#iteration - this.#lastRebroadcastIteration >= every) {
+      this.#lastRebroadcastIteration = this.#iteration;
+      this.#broadcastAdaptiveSnapshot();
     }
 
     // Always wake the run loop so top-up can proceed.
