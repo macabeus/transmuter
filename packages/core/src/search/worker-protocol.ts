@@ -110,6 +110,22 @@ export type WorkerResult =
       readonly timings: PhaseTimings;
     }
   | {
+      /**
+       * Compile succeeded but the scorer couldn't read the function symbol
+       * from the resulting .o (e.g. compiler optimised it away or renamed
+       * it). The mutation is unusable, but this is NOT a compile failure —
+       * the orchestrator must not lump this with compile-error stats or
+       * call `pool.recordFailure()` for this kind.
+       */
+      readonly kind: 'scorer-failed';
+      readonly jobId: number;
+      readonly mutationTargetId: string;
+      readonly ruleId: string;
+      readonly location: MutationLocation;
+      readonly error: string;
+      readonly timings: PhaseTimings;
+    }
+  | {
       readonly kind: 'scored';
       readonly jobId: number;
       readonly mutationTargetId: string;

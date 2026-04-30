@@ -86,6 +86,7 @@ interface WorkerSlot {
 interface SlotStats {
   compiled: number;
   errors: number;
+  scorerFailures: number;
   deduped: number;
   noMutation: number;
 }
@@ -113,7 +114,7 @@ export class SlotOrchestrator {
   #paused = false;
   #perfectMatchFound = false;
   #resumeWaiters: (() => void)[] = [];
-  #slotStats: SlotStats = { compiled: 0, errors: 0, deduped: 0, noMutation: 0 };
+  #slotStats: SlotStats = { compiled: 0, errors: 0, scorerFailures: 0, deduped: 0, noMutation: 0 };
   #phaseTotals: PhaseTotals = { mutate: 0, parse: 0, ruleApply: 0, dedup: 0, compile: 0, score: 0 };
   #mutationDepth: number;
   #nextJobId = 0;
@@ -176,11 +177,11 @@ export class SlotOrchestrator {
     const wall = (Date.now() - this.#startTime) / 1000;
     const s = this.#slotStats;
     const totalResults = this.#iteration;
-    const cAtt = s.compiled + s.errors;
+    const cAtt = s.compiled + s.errors + s.scorerFailures;
     const summary = [
       `\n[TRANSMUTER_WORKER_PROFILE]`,
       `  wall=${wall.toFixed(2)}s  workers=${this.#opts.concurrency}  iter-total=${totalResults}  iter/s=${(totalResults / wall).toFixed(1)}`,
-      `  scored=${s.compiled}  compile-errors=${s.errors}  dedup=${s.deduped}  no-mutation=${s.noMutation}`,
+      `  scored=${s.compiled}  compile-errors=${s.errors}  scorer-failed=${s.scorerFailures}  dedup=${s.deduped}  no-mutation=${s.noMutation}`,
       `  compile-attempts/s=${(cAtt / wall).toFixed(2)}  successful-iter/s=${(s.compiled / wall).toFixed(2)}`,
       `  (compile rate ${((cAtt / totalResults) * 100).toFixed(1)}% of all results; no-mutation ${((s.noMutation / totalResults) * 100).toFixed(1)}%)`,
     ].join('\n');
@@ -197,8 +198,8 @@ export class SlotOrchestrator {
     const phaseCounts = {
       mutate: totalResults,
       dedup: totalResults - s.noMutation,
-      compile: s.compiled + s.errors,
-      score: s.compiled,
+      compile: s.compiled + s.errors + s.scorerFailures,
+      score: s.compiled + s.scorerFailures,
     };
     const fmt = (ms: number, count: number): string => {
       const pct = totalWorkMs > 0 ? (ms / totalWorkMs) * 100 : 0;
@@ -230,9 +231,13 @@ export class SlotOrchestrator {
     return this.#slotStats.compiled;
   }
 
-  /** Compile attempts so far (compiled + compile-errored). Tracks `maxCompiles`. */
+  /**
+   * Compile attempts so far (compiled + compile-errored + scorer-failed).
+   * All three reached `compiler.compile()`, so all three count against
+   * `maxCompiles`. Tracks `maxCompiles`.
+   */
   getCompileAttempts(): number {
-    return this.#slotStats.compiled + this.#slotStats.errors;
+    return this.#slotStats.compiled + this.#slotStats.errors + this.#slotStats.scorerFailures;
   }
 
   getElapsed(): number {
@@ -450,8 +455,7 @@ export class SlotOrchestrator {
     // maxCompiles counts attempts that actually reached `compiler.compile()` —
     // i.e. not killed by no-mutation or dedup. This matches Permuter and
     // matches what users almost certainly mean when they cap a run.
-    const compileAttempts = this.#slotStats.compiled + this.#slotStats.errors;
-    if (compileAttempts >= this.#opts.maxCompiles) return true;
+    if (this.getCompileAttempts() >= this.#opts.maxCompiles) return true;
     if (Date.now() - this.#startTime >= this.#opts.timeoutMs) return true;
     if (
       this.#opts.maxUnproductiveResults !== undefined &&
@@ -532,6 +536,14 @@ export class SlotOrchestrator {
         });
         return;
       }
+      case 'scorer-failed': {
+        // Compile succeeded; only scoring failed. Counts against maxCompiles
+        // (compiler.compile() did run) but is NOT a compile failure: don't
+        // bump errors and don't recordFailure on the target — the rule
+        // didn't break compile, the symbol just wasn't readable.
+        this.#slotStats.scorerFailures++;
+        return;
+      }
       case 'scored': {
         // Main-side candidate filter (applied to the mutated source since we
         // couldn't evaluate it before dispatching the job).
@@ -551,9 +563,10 @@ export class SlotOrchestrator {
           ? this.#opts.scoreTransform(result.mutatedSource, asmResult)
           : result.score;
 
-        const headCandidate = this.#opts.pool
-          .getActiveTargets()
-          .find((t) => t.id === result.mutationTargetId);
+        // Use getTarget (not getActiveTargets) — a target may have been
+        // disabled via the HTTP API while this job was in flight, and we
+        // still want the correct parentCandidateId for the fork event.
+        const parentTarget = this.#opts.pool.getTarget(result.mutationTargetId);
         const reported = this.#opts.pool.report(
           {
             mutationTargetId: result.mutationTargetId,
@@ -578,8 +591,8 @@ export class SlotOrchestrator {
 
         const forked = reported.forked;
         if (forked) {
-          const parentCandidate = headCandidate
-            ? this.#opts.pool.getCandidate(headCandidate.candidateId)
+          const parentCandidate = parentTarget
+            ? this.#opts.pool.getCandidate(parentTarget.candidateId)
             : undefined;
           this.#emit({
             type: 'forked',

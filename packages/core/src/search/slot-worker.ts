@@ -263,14 +263,25 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   }
 
   const tScore0 = performance.now();
-  const scored = await s.scorer.scoreWithAssembly(compileResult.objPath);
-  const scoreMs = performance.now() - tScore0;
-
-  await Compiler.cleanup(compileResult.objPath);
+  let scored: Awaited<ReturnType<typeof s.scorer.scoreWithAssembly>>;
+  let scoreMs: number;
+  // try/finally guarantees Compiler.cleanup runs even if scoreWithAssembly
+  // throws — without this, every scorer crash leaks the .o until the
+  // worker shuts down and wipes the whole tmp dir.
+  try {
+    scored = await s.scorer.scoreWithAssembly(compileResult.objPath);
+  } finally {
+    scoreMs = performance.now() - tScore0;
+    await Compiler.cleanup(compileResult.objPath);
+  }
 
   if (!scored) {
+    // Compile actually succeeded; the scorer just couldn't find the symbol
+    // (e.g. compiler optimised it away). Report it as 'scorer-failed' —
+    // the orchestrator must not blame the rule's compile-error stats or
+    // call recordFailure on the target. Distinct from 'compile-error'.
     post({
-      kind: 'compile-error',
+      kind: 'scorer-failed',
       jobId: job.jobId,
       mutationTargetId: job.mutationTargetId,
       ruleId,
@@ -282,6 +293,7 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
         ruleApply: ruleApplyMs,
         dedup: dedupMs,
         compile: compileMs,
+        score: scoreMs,
       },
     });
     return;

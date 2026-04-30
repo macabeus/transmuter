@@ -41,12 +41,34 @@ export function extractFunctionDefinition(source: string, functionName: string):
       continue;
     }
 
-    // Brace-balance the body.
+    // Brace-balance the body. Skip over string literals, char literals, and
+    // comments — braces inside those are content, not structural.
     let j = i;
     let braceDepth = 1;
     while (++j < source.length && braceDepth > 0) {
       const ch = source[j];
-      if (ch === '{') {
+      const next = source[j + 1];
+      if (ch === '"' || ch === "'") {
+        // Walk to the matching quote, honoring backslash escapes.
+        const quote = ch;
+        while (++j < source.length) {
+          const c = source[j];
+          if (c === '\\') {
+            j++;
+            continue;
+          }
+          if (c === quote) break;
+        }
+      } else if (ch === '/' && next === '/') {
+        // Line comment — to end of line.
+        j++;
+        while (j + 1 < source.length && source[j + 1] !== '\n') j++;
+      } else if (ch === '/' && next === '*') {
+        // Block comment — to */.
+        j++;
+        while (j + 1 < source.length && !(source[j] === '*' && source[j + 1] === '/')) j++;
+        j++;
+      } else if (ch === '{') {
         braceDepth++;
       } else if (ch === '}') {
         braceDepth--;

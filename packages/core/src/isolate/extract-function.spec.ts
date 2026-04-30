@@ -74,4 +74,73 @@ int target(int x) { return x + 100; }
     // No metachars used here, but ensure normal name still works.
     expect(extractFunctionDefinition(source, 'my_fn')).toBe('int my_fn(void) { return 1; }');
   });
+
+  // Bug-#2 regression tests — the brace-balanced scan must skip over string
+  // literals, char literals, and comments. Otherwise an unbalanced brace
+  // hidden inside one of those will throw off depth counting and either
+  // truncate the body early or run away to EOF.
+
+  it('handles a `}` inside a string literal', () => {
+    const source = `
+int target(int x) {
+    const char *s = "}}}";
+    return x;
+}
+void after(void) {}
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      'int target(int x) {\n    const char *s = "}}}";\n    return x;\n}',
+    );
+  });
+
+  it('handles a `{` inside a char literal', () => {
+    const source = `
+int target(int x) {
+    char c = '{';
+    return x + c;
+}
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      "int target(int x) {\n    char c = '{';\n    return x + c;\n}",
+    );
+  });
+
+  it('handles a `}` inside a // line comment', () => {
+    const source = `
+int target(int x) {
+    // }
+    return x;
+}
+void after(void) {}
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      'int target(int x) {\n    // }\n    return x;\n}',
+    );
+  });
+
+  it('handles a `}` inside a block comment', () => {
+    const source = `
+int target(int x) {
+    /* } */
+    return x;
+}
+void after(void) {}
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      'int target(int x) {\n    /* } */\n    return x;\n}',
+    );
+  });
+
+  it('handles backslash-escaped quote inside a string literal', () => {
+    const source = `
+int target(int x) {
+    const char *s = "\\"}";
+    return x;
+}
+void after(void) {}
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      'int target(int x) {\n    const char *s = "\\"}";\n    return x;\n}',
+    );
+  });
 });

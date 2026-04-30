@@ -405,7 +405,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
 
         const seed = args.seed ?? Math.floor(Math.random() * 0xffffffff);
         const rawConcurrency = args.concurrency ?? transmuterConfig?.concurrency;
-        if (rawConcurrency !== undefined && (!Number.isFinite(rawConcurrency) || rawConcurrency < 1)) {
+        if (rawConcurrency !== undefined && (!Number.isInteger(rawConcurrency) || rawConcurrency < 1)) {
           console.error(`Error: --concurrency must be a positive integer (got ${rawConcurrency}).`);
           process.exit(1);
         }
