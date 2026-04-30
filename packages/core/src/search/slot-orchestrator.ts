@@ -24,13 +24,7 @@ import type {
   MutationSearchEventHandler,
 } from '~/types.js';
 
-import type {
-  PhaseTimings,
-  WorkerInit,
-  WorkerJob,
-  WorkerOutbound,
-  WorkerResult,
-} from './worker-protocol.js';
+import type { PhaseTimings, WorkerInit, WorkerJob, WorkerOutbound, WorkerResult } from './worker-protocol.js';
 
 /** Options for SlotOrchestrator. */
 export interface SlotOrchestratorOptions {
@@ -173,7 +167,9 @@ export class SlotOrchestrator {
   }
 
   #maybeEmitProfile(): void {
-    if (!process.env.TRANSMUTER_PROFILE) return;
+    if (!process.env.TRANSMUTER_PROFILE) {
+      return;
+    }
     const wall = (Date.now() - this.#startTime) / 1000;
     const s = this.#slotStats;
     const totalResults = this.#iteration;
@@ -267,15 +263,24 @@ export class SlotOrchestrator {
 
   resume(): void {
     this.#paused = false;
-    for (const w of this.#resumeWaiters) w();
+    for (const w of this.#resumeWaiters) {
+      w();
+    }
     this.#resumeWaiters = [];
     this.#wakeRunLoop();
   }
 
-  setFocusConstraints(focusRegions: readonly FocusRegionConstraint[], avoidRegions: readonly AvoidRegionConstraint[]): void {
+  setFocusConstraints(
+    focusRegions: readonly FocusRegionConstraint[],
+    avoidRegions: readonly AvoidRegionConstraint[],
+  ): void {
     this.#opts = { ...this.#opts, focusRegions, avoidRegions };
     for (const slot of this.#slots) {
-      slot.worker.postMessage({ kind: 'focus-updated', focusRegions: [...focusRegions], avoidRegions: [...avoidRegions] });
+      slot.worker.postMessage({
+        kind: 'focus-updated',
+        focusRegions: [...focusRegions],
+        avoidRegions: [...avoidRegions],
+      });
     }
   }
 
@@ -332,7 +337,10 @@ export class SlotOrchestrator {
 
   #initWorker(worker: Worker, slotId: number): Promise<void> {
     const registry = this.#opts.registry;
-    const enabled = registry.all().filter((r) => registry.getWeight(r.id) > 0).map((r) => r.id);
+    const enabled = registry
+      .all()
+      .filter((r) => registry.getWeight(r.id) > 0)
+      .map((r) => r.id);
     const init: WorkerInit = {
       kind: 'init',
       slotId,
@@ -399,19 +407,27 @@ export class SlotOrchestrator {
   }
 
   #topUpWorkers(): boolean {
-    if (this.#shouldStop()) return false;
+    if (this.#shouldStop()) {
+      return false;
+    }
     const prefetch = this.#opts.prefetchDepth ?? 2;
     let postedAny = false;
     for (const slot of this.#slots) {
       while (slot.pending < prefetch) {
-        if (this.#shouldStop()) return postedAny;
+        if (this.#shouldStop()) {
+          return postedAny;
+        }
 
         const activeTargets = this.#opts.pool.getActiveTargets();
-        if (activeTargets.length === 0) return postedAny;
+        if (activeTargets.length === 0) {
+          return postedAny;
+        }
 
         const target = this.#opts.pool.select();
         const headCandidate = this.#opts.pool.getCandidate(target.candidateId);
-        if (!headCandidate) continue;
+        if (!headCandidate) {
+          continue;
+        }
 
         // Optional candidate filter — applied here so we don't waste a
         // round-trip for mutations we know will be rejected upstream.
@@ -449,14 +465,24 @@ export class SlotOrchestrator {
   }
 
   #shouldStop(): boolean {
-    if (this.#stopped) return true;
-    if (this.#perfectMatchFound) return true;
-    if (this.#opts.signal.aborted) return true;
+    if (this.#stopped) {
+      return true;
+    }
+    if (this.#perfectMatchFound) {
+      return true;
+    }
+    if (this.#opts.signal.aborted) {
+      return true;
+    }
     // maxCompiles counts attempts that actually reached `compiler.compile()` —
     // i.e. not killed by no-mutation or dedup. This matches Permuter and
     // matches what users almost certainly mean when they cap a run.
-    if (this.getCompileAttempts() >= this.#opts.maxCompiles) return true;
-    if (Date.now() - this.#startTime >= this.#opts.timeoutMs) return true;
+    if (this.getCompileAttempts() >= this.#opts.maxCompiles) {
+      return true;
+    }
+    if (Date.now() - this.#startTime >= this.#opts.timeoutMs) {
+      return true;
+    }
     if (
       this.#opts.maxUnproductiveResults !== undefined &&
       this.#iteration > 0 &&
@@ -591,9 +617,7 @@ export class SlotOrchestrator {
 
         const forked = reported.forked;
         if (forked) {
-          const parentCandidate = parentTarget
-            ? this.#opts.pool.getCandidate(parentTarget.candidateId)
-            : undefined;
+          const parentCandidate = parentTarget ? this.#opts.pool.getCandidate(parentTarget.candidateId) : undefined;
           this.#emit({
             type: 'forked',
             iteration: this.#iteration,
@@ -643,9 +667,15 @@ export class SlotOrchestrator {
     p.mutate += t.mutate;
     p.parse += t.parse;
     p.ruleApply += t.ruleApply;
-    if (t.dedup !== undefined) p.dedup += t.dedup;
-    if (t.compile !== undefined) p.compile += t.compile;
-    if (t.score !== undefined) p.score += t.score;
+    if (t.dedup !== undefined) {
+      p.dedup += t.dedup;
+    }
+    if (t.compile !== undefined) {
+      p.compile += t.compile;
+    }
+    if (t.score !== undefined) {
+      p.score += t.score;
+    }
   }
 
   #emit(event: MutationSearchEvent): void {

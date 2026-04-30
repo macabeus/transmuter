@@ -8,7 +8,15 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { MutationApplyResult } from '~/types.js';
 
-import { findAllByKind, findTargetFunction, getDeclarations, getIndentation, isInsideAsm, isSameNode, replaceRange } from '../helpers.js';
+import {
+  findAllByKind,
+  findTargetFunction,
+  getDeclarations,
+  getIndentation,
+  isInsideAsm,
+  isSameNode,
+  replaceRange,
+} from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 interface VarInfo {

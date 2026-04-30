@@ -339,9 +339,15 @@ describe('AdaptiveSelector', () => {
 
     it('round-trips recorded stats', () => {
       const a = new AdaptiveSelector({ windowSize: 20 });
-      for (let i = 0; i < 5; i++) a.record('t1', 'rule-a', i % 2 === 0);
-      for (let i = 0; i < 3; i++) a.record('t1', 'rule-b', false);
-      for (let i = 0; i < 7; i++) a.record('t2', 'rule-a', true);
+      for (let i = 0; i < 5; i++) {
+        a.record('t1', 'rule-a', i % 2 === 0);
+      }
+      for (let i = 0; i < 3; i++) {
+        a.record('t1', 'rule-b', false);
+      }
+      for (let i = 0; i < 7; i++) {
+        a.record('t2', 'rule-a', true);
+      }
 
       const b = new AdaptiveSelector();
       b.restore(a.serialize());

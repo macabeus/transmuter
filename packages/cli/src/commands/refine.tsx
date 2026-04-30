@@ -725,9 +725,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
         }
 
         // Save report (with cleanup data if available)
-        const report = cleanupReportData
-          ? { ...store.toJSON(), cleanup: cleanupReportData }
-          : store.toJSON();
+        const report = cleanupReportData ? { ...store.toJSON(), cleanup: cleanupReportData } : store.toJSON();
         const sourceDir = path.dirname(path.resolve(args.sourceFile));
         const reportFile = path.join(sourceDir, `refine-${Date.now()}.json`);
         await fs.writeFile(reportFile, JSON.stringify(report, null, 2));

@@ -14,12 +14,7 @@
  * See BUN_WORKERS_PLAN.md §4 for the full design rationale.
  */
 import type { Language } from '~/language.js';
-import type {
-  AvoidRegionConstraint,
-  DiffBreakdown,
-  FocusRegionConstraint,
-  MutationLocation,
-} from '~/types.js';
+import type { AvoidRegionConstraint, DiffBreakdown, FocusRegionConstraint, MutationLocation } from '~/types.js';
 
 /** Worker init message. Sent once, right after construction. */
 export interface WorkerInit {
@@ -57,7 +52,11 @@ export interface WorkerJob {
 
 /** Control messages: runtime state changes that don't produce a result. */
 export type WorkerControl =
-  | { readonly kind: 'rules-updated'; readonly enabledRuleIds: readonly string[]; readonly ruleWeights: Readonly<Record<string, number>> }
+  | {
+      readonly kind: 'rules-updated';
+      readonly enabledRuleIds: readonly string[];
+      readonly ruleWeights: Readonly<Record<string, number>>;
+    }
   | { readonly kind: 'adaptive-snapshot'; readonly snapshot: Uint8Array }
   | {
       readonly kind: 'focus-updated';

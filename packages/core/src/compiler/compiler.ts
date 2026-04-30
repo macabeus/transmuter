@@ -150,8 +150,12 @@ export class Compiler {
       stdoutFd = openSync(stdoutPath, 'w');
       stderrFd = openSync(stderrPath, 'w');
     } catch (err) {
-      if (stdoutFd !== undefined) closeSync(stdoutFd);
-      if (stderrFd !== undefined) closeSync(stderrFd);
+      if (stdoutFd !== undefined) {
+        closeSync(stdoutFd);
+      }
+      if (stderrFd !== undefined) {
+        closeSync(stderrFd);
+      }
       return { exitCode: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) };
     }
 
@@ -205,7 +209,9 @@ export class Compiler {
 async function readTruncated(filePath: string): Promise<string> {
   try {
     const file = Bun.file(filePath);
-    if (!(await file.exists())) return '';
+    if (!(await file.exists())) {
+      return '';
+    }
     const size = file.size;
     if (size > 50_000) {
       const buf = new Uint8Array(await file.slice(0, 50_000).arrayBuffer());

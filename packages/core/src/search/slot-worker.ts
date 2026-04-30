@@ -23,8 +23,8 @@
  * must point at the built slot-worker.js (shipped as a separate tsup entry).
  */
 import { Compiler } from '~/compiler/compiler.js';
-import { Deduplicator } from '~/pipeline/deduplicator.js';
 import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
+import { Deduplicator } from '~/pipeline/deduplicator.js';
 import { Rng } from '~/rng.js';
 import { AdaptiveSelector } from '~/rules/adaptive-selector.js';
 import { builtInRules } from '~/rules/built-in/index.js';
@@ -73,27 +73,37 @@ self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
         return;
 
       case 'job':
-        if (!state) throw new Error('worker received job before init');
+        if (!state) {
+          throw new Error('worker received job before init');
+        }
         await handleJob(msg, state);
         return;
 
       case 'rules-updated':
-        if (!state) throw new Error('worker received rules-updated before init');
+        if (!state) {
+          throw new Error('worker received rules-updated before init');
+        }
         applyRules(state, msg.enabledRuleIds, msg.ruleWeights);
         return;
 
       case 'adaptive-snapshot':
-        if (!state) throw new Error('worker received adaptive-snapshot before init');
+        if (!state) {
+          throw new Error('worker received adaptive-snapshot before init');
+        }
         state.adaptive.restore(msg.snapshot);
         return;
 
       case 'focus-updated':
-        if (!state) throw new Error('worker received focus-updated before init');
+        if (!state) {
+          throw new Error('worker received focus-updated before init');
+        }
         state.engine.setFocusConstraints([...msg.focusRegions], [...msg.avoidRegions]);
         return;
 
       case 'mutation-depth-updated':
-        if (!state) throw new Error('worker received mutation-depth-updated before init');
+        if (!state) {
+          throw new Error('worker received mutation-depth-updated before init');
+        }
         state.mutationDepth = msg.depth;
         return;
 

@@ -113,9 +113,7 @@ int target(int x) {
 }
 void after(void) {}
 `;
-    expect(extractFunctionDefinition(source, 'target')).toBe(
-      'int target(int x) {\n    // }\n    return x;\n}',
-    );
+    expect(extractFunctionDefinition(source, 'target')).toBe('int target(int x) {\n    // }\n    return x;\n}');
   });
 
   it('handles a `}` inside a block comment', () => {
@@ -126,9 +124,7 @@ int target(int x) {
 }
 void after(void) {}
 `;
-    expect(extractFunctionDefinition(source, 'target')).toBe(
-      'int target(int x) {\n    /* } */\n    return x;\n}',
-    );
+    expect(extractFunctionDefinition(source, 'target')).toBe('int target(int x) {\n    /* } */\n    return x;\n}');
   });
 
   it('handles backslash-escaped quote inside a string literal', () => {

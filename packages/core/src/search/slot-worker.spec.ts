@@ -15,16 +15,9 @@
 import { accessSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
-
 import { builtInRules } from '~/rules/built-in/index.js';
 
-import type {
-  WorkerInbound,
-  WorkerInit,
-  WorkerJob,
-  WorkerOutbound,
-  WorkerResult,
-} from './worker-protocol.js';
+import type { WorkerInbound, WorkerInit, WorkerJob, WorkerOutbound, WorkerResult } from './worker-protocol.js';
 
 const FIXTURE_DIR = new URL('../../../../test-fixture/entity-item-drop/', import.meta.url).pathname;
 const SHARED_DIR = new URL('../../../../test-fixture/shared/', import.meta.url).pathname;
@@ -68,7 +61,9 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
       timeoutMs = 10_000,
     ): Promise<T> {
       const existing = inbound.find(predicate);
-      if (existing) return Promise.resolve(existing);
+      if (existing) {
+        return Promise.resolve(existing);
+      }
       return new Promise<T>((resolve, reject) => {
         const start = performance.now();
         const original = worker.onmessage;
@@ -117,10 +112,7 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
       };
       send(init);
 
-      const ready = await waitFor(
-        (m): m is Extract<WorkerOutbound, { kind: 'ready' }> => m.kind === 'ready',
-        30_000,
-      );
+      const ready = await waitFor((m): m is Extract<WorkerOutbound, { kind: 'ready' }> => m.kind === 'ready', 30_000);
       expect(ready.slotId).toBe(0);
       expect(ready.initMs).toBeGreaterThan(0);
 
@@ -136,10 +128,7 @@ describeIfAgbcc('slot-worker (e2e, agbcc)', () => {
 
       const result = await waitFor(
         (m): m is WorkerResult =>
-          (m.kind === 'scored' ||
-            m.kind === 'compile-error' ||
-            m.kind === 'dedup' ||
-            m.kind === 'no-mutation') &&
+          (m.kind === 'scored' || m.kind === 'compile-error' || m.kind === 'dedup' || m.kind === 'no-mutation') &&
           m.jobId === 1,
         45_000,
       );

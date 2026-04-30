@@ -121,7 +121,7 @@ const COMMON_READ_ENDPOINTS: EndpointDescription[] = [
     method: 'GET',
     path: '/candidates',
     description:
-      'All CandidateNodes. Each candidate\'s `source` field is sliced to the target function definition (call /context-source for the full TU). ' +
+      "All CandidateNodes. Each candidate's `source` field is sliced to the target function definition (call /context-source for the full TU). " +
       'Supports query filters: ?maxScore=N, ?minScore=N, ?origin=genesis|organic|external, ?limit=N.',
   },
   {

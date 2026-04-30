@@ -133,7 +133,9 @@ export class MutationEngine {
 
     const t0 = PROFILE ? process.hrtime.bigint() : 0n;
     const root = parseCached(this.#language, source);
-    if (PROFILE) PROFILE_STATS.parseNs += Number(process.hrtime.bigint() - t0);
+    if (PROFILE) {
+      PROFILE_STATS.parseNs += Number(process.hrtime.bigint() - t0);
+    }
 
     const ctx: MutationContext = {
       source,
@@ -151,7 +153,9 @@ export class MutationEngine {
     let candidates = active;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (candidates.length === 0) break;
+      if (candidates.length === 0) {
+        break;
+      }
 
       const index = this.#adaptiveSelector.selectIndex(
         targetId,
@@ -162,7 +166,9 @@ export class MutationEngine {
 
       const tRule = PROFILE ? process.hrtime.bigint() : 0n;
       const result = rule.apply(ctx);
-      if (PROFILE) PROFILE_STATS.ruleApplyNs += Number(process.hrtime.bigint() - tRule);
+      if (PROFILE) {
+        PROFILE_STATS.ruleApplyNs += Number(process.hrtime.bigint() - tRule);
+      }
 
       if (result === null) {
         // Hard fail — no candidates in this AST. Skip on future attempts.

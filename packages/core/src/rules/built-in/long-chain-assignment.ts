@@ -7,7 +7,15 @@
 import type { SgNode } from '@ast-grep/napi';
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { extractSimpleAssignment, findAllByKind, findTargetFunction, getIndentation, getStatements, replaceRange, type SimpleAssignment } from '../helpers.js';
+import {
+  type SimpleAssignment,
+  extractSimpleAssignment,
+  findAllByKind,
+  findTargetFunction,
+  getIndentation,
+  getStatements,
+  replaceRange,
+} from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const longChainAssignment: Rule = {

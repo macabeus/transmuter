@@ -553,9 +553,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         }
 
         // Save session report (with cleanup data if available)
-        const report = cleanupReportData
-          ? { ...store.toJSON(), cleanup: cleanupReportData }
-          : store.toJSON();
+        const report = cleanupReportData ? { ...store.toJSON(), cleanup: cleanupReportData } : store.toJSON();
         const sourceDir = path.dirname(path.resolve(args.sourceFile));
         const reportFile = path.join(sourceDir, `session-${Date.now()}.json`);
         await fs.writeFile(reportFile, JSON.stringify(report, null, 2));

@@ -641,14 +641,18 @@ export class MutationSearch {
   /** Enable a previously disabled rule. Returns false if the rule doesn't exist. */
   enableRule(ruleId: string): boolean {
     const ok = this.#registry.enable(ruleId);
-    if (ok) this.#broadcastRulesIfWorkers();
+    if (ok) {
+      this.#broadcastRulesIfWorkers();
+    }
     return ok;
   }
 
   /** Disable a rule. Returns false if the rule doesn't exist. */
   disableRule(ruleId: string): boolean {
     const ok = this.#registry.disable(ruleId);
-    if (ok) this.#broadcastRulesIfWorkers();
+    if (ok) {
+      this.#broadcastRulesIfWorkers();
+    }
     return ok;
   }
 

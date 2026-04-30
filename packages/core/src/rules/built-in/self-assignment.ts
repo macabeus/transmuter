@@ -5,7 +5,14 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findAllByKind, findTargetFunction, getDeclarations, getIndentation, getStatements, replaceRange } from '../helpers.js';
+import {
+  findAllByKind,
+  findTargetFunction,
+  getDeclarations,
+  getIndentation,
+  getStatements,
+  replaceRange,
+} from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const selfAssignment: Rule = {

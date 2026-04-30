@@ -58,16 +58,22 @@ export function extractFunctionDefinition(source: string, functionName: string):
             j++;
             continue;
           }
-          if (c === quote) break;
+          if (c === quote) {
+            break;
+          }
         }
       } else if (ch === '/' && next === '/') {
         // Line comment — to end of line.
         j++;
-        while (j + 1 < source.length && source[j + 1] !== '\n') j++;
+        while (j + 1 < source.length && source[j + 1] !== '\n') {
+          j++;
+        }
       } else if (ch === '/' && next === '*') {
         // Block comment — to */.
         j++;
-        while (j + 1 < source.length && !(source[j] === '*' && source[j + 1] === '/')) j++;
+        while (j + 1 < source.length && !(source[j] === '*' && source[j + 1] === '/')) {
+          j++;
+        }
         j++;
       } else if (ch === '{') {
         braceDepth++;
