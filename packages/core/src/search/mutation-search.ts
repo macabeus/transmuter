@@ -1,8 +1,9 @@
 /**
  * MutationSearch — generic mutation search loop with pluggable objectives.
  *
- * Assembles Pool, SlotOrchestrator, MutationEngine, Compiler, and Scorer
- * into a concurrent search that mutates source code to minimize a score.
+ * Assembles Pool, SlotOrchestrator, Compiler, and Scorer into a concurrent
+ * search that mutates source code to minimize a score. Per-slot mutation
+ * engines live inside their Bun Workers, not on the main thread.
  * The default score is assembly instruction-level diff count (lower = better,
  * 0 = perfect). Provide `scoreTransform` to optimize a different objective
  * (e.g., smell score for cleanup) while still using assembly scoring as the base.
@@ -21,8 +22,6 @@ import { getProfile } from '~/profiles/get-profile.js';
 import { Rng } from '~/rng.js';
 import { AdaptiveSelector } from '~/rules/adaptive-selector.js';
 import { builtInRules } from '~/rules/built-in/index.js';
-import { MutationEngine } from '~/rules/engine.js';
-import { CompositeNodeFilter } from '~/rules/node-filter.js';
 import { RuleRegistry } from '~/rules/registry.js';
 import { Objdiff } from '~/scoring/objdiff.js';
 import { Scorer } from '~/scoring/scorer.js';
@@ -56,7 +55,6 @@ export class MutationSearch {
   #registry: RuleRegistry;
   #rng: Rng;
   #pool: Pool;
-  #engines: MutationEngine[] = [];
   #orchestrator: SlotOrchestrator | null = null;
   #adaptiveSelector: AdaptiveSelector | null = null;
   #focusRegions: FocusRegionConstraint[] = [];
@@ -271,27 +269,8 @@ export class MutationSearch {
       this.#focusRegions = constraints.filter((c): c is FocusRegionConstraint => c.type === 'focus-region');
       this.#avoidRegions = constraints.filter((c): c is AvoidRegionConstraint => c.type === 'avoid-region');
 
-      const nodeFilter =
-        this.#focusRegions.length > 0 || this.#avoidRegions.length > 0
-          ? new CompositeNodeFilter(this.#focusRegions, this.#avoidRegions)
-          : undefined;
-
-      // Create adaptive selector for Thompson Sampling rule selection
       const adaptiveSelector = new AdaptiveSelector(this.#opts.adaptiveSelection);
       this.#adaptiveSelector = adaptiveSelector;
-
-      // Create per-slot mutation engines with forked RNGs for deterministic isolation
-      const engineFactory = (slotIndex: number): MutationEngine => {
-        const slotRng = this.#rng.fork(slotIndex);
-        const engine = new MutationEngine(this.#registry, slotRng, {
-          adaptiveSelector,
-          language: this.#language,
-          nodeFilter,
-          avoidRegions: this.#avoidRegions,
-        });
-        this.#engines.push(engine);
-        return engine;
-      };
 
       // Process hypothesis constraints
       for (const constraint of constraints) {
@@ -772,9 +751,6 @@ export class MutationSearch {
   setFocusConstraints(focusRegions: FocusRegionConstraint[], avoidRegions: AvoidRegionConstraint[]): void {
     this.#focusRegions = focusRegions;
     this.#avoidRegions = avoidRegions;
-    for (const engine of this.#engines) {
-      engine.setFocusConstraints(focusRegions, avoidRegions);
-    }
     this.#orchestrator?.setFocusConstraints(focusRegions, avoidRegions);
   }
 

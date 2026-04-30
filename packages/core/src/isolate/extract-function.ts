@@ -10,9 +10,10 @@
  *
  * Returns the original `source` if no definition for `functionName` is found.
  */
+import { escapeRegex } from '~/rules/helpers.js';
+
 export function extractFunctionDefinition(source: string, functionName: string): string {
-  const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`\\b${escaped}\\s*\\(`, 'g');
+  const re = new RegExp(`\\b${escapeRegex(functionName)}\\s*\\(`, 'g');
 
   let match: RegExpExecArray | null;
   while ((match = re.exec(source)) !== null) {
