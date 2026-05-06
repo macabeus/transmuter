@@ -4,6 +4,7 @@
  * Wire it to the MutationSearch's onEvent callback via push(), then query
  * during or after the session. Serializes to JSON for the webapp.
  */
+import { extractFunctionDefinition } from '~/isolate/extract-function.js';
 import type {
   CandidateNode,
   DiffBreakdown,
@@ -20,8 +21,6 @@ import type {
   SuperNode,
   TimelinePoint,
 } from '~/types.js';
-
-import { extractFunctionDefinition } from '../isolate/extract-function.js';
 
 type ForkedEvent = Extract<MutationSearchEvent, { type: 'forked' }>;
 

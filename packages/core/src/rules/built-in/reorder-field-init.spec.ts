@@ -5,8 +5,8 @@ import { makeRuleCtx } from '../test-utils.js';
 import { reorderFieldInit } from './reorder-field-init.js';
 
 describe('reorder-field-init', () => {
-  beforeAll(async () => {
-    await ensureLanguageRegistered('cpp');
+  beforeAll(() => {
+    ensureLanguageRegistered('cpp');
   });
 
   it('swaps two adjacent field initializers', () => {

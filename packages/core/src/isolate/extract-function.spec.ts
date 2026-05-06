@@ -39,10 +39,9 @@ int target(int x) {
 }
 void after(void) {}
 `;
-    const out = extractFunctionDefinition(source, 'target');
-    expect(out.startsWith('int target')).toBe(true);
-    expect(out.endsWith('}')).toBe(true);
-    expect(out).toContain('for (int i = 0; i < x; i++)');
+    expect(extractFunctionDefinition(source, 'target')).toBe(
+      'int target(int x) {\n    if (x > 0) {\n        for (int i = 0; i < x; i++) {\n            x--;\n        }\n    }\n    return x;\n}',
+    );
   });
 
   it('handles function-pointer parameters (nested parens)', () => {
@@ -66,19 +65,6 @@ int target(int x) { return x + 100; }
     const source = `int other(void) { return 0; }`;
     expect(extractFunctionDefinition(source, 'missing')).toBe(source);
   });
-
-  it('escapes regex metacharacters in the function name', () => {
-    // A pathological identifier that would otherwise be interpreted as a regex.
-    // C identifiers can't contain dots, but defensive escaping is cheap.
-    const source = `int my_fn(void) { return 1; }`;
-    // No metachars used here, but ensure normal name still works.
-    expect(extractFunctionDefinition(source, 'my_fn')).toBe('int my_fn(void) { return 1; }');
-  });
-
-  // Bug-#2 regression tests — the brace-balanced scan must skip over string
-  // literals, char literals, and comments. Otherwise an unbalanced brace
-  // hidden inside one of those will throw off depth counting and either
-  // truncate the body early or run away to EOF.
 
   it('handles a `}` inside a string literal', () => {
     const source = `

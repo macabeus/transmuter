@@ -1,9 +1,5 @@
 /**
  * `transmuter match` command — main permutation command with live dashboard.
- *
- * On Ctrl+C: stops the search, waits for in-flight compilations to finish,
- * then shows a brief cooldown before exiting. This gives the OS time to reclaim
- * resources from the compilation burst so the next command starts immediately.
  */
 import {
   Cleanup,
@@ -310,8 +306,8 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
 
   // Ctrl+C: stop search gracefully
   useInput(
-    (_input, key) => {
-      if (key.ctrl && _input === 'c' && phase === 'running') {
+    (input, key) => {
+      if (key.ctrl && input === 'c' && phase === 'running') {
         setPhase('stopping');
         searchRef.current?.stop();
       }
@@ -332,7 +328,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
       try {
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
-        await ensureLanguageRegistered(language);
+        ensureLanguageRegistered(language);
         const decompConfig = await loadDecompYaml(args.config, args.cwd);
         const transmuterConfig = decompConfig?.tools?.transmuter;
 

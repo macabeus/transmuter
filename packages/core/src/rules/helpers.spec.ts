@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseC } from '~/parser.js';
+import { parse } from '~/parser.js';
 
 import {
   escapeRegex,
@@ -18,14 +18,14 @@ import {
 
 describe('findTargetFunction', () => {
   it('finds a C function by name', () => {
-    const root = parseC('int foo(void) { return 1; }');
+    const root = parse('c', 'int foo(void) { return 1; }');
     const node = findTargetFunction(root, 'foo');
     expect(node).not.toBeNull();
     expect(node!.kind()).toBe('function_definition');
   });
 
   it('returns null when function is not found', () => {
-    const root = parseC('int foo(void) { return 1; }');
+    const root = parse('c', 'int foo(void) { return 1; }');
     expect(findTargetFunction(root, 'bar')).toBeNull();
   });
 
@@ -35,7 +35,7 @@ int foo(void) { return 1; }
 int bar(void) { return 2; }
 int baz(void) { return 3; }
 `;
-    const root = parseC(source);
+    const root = parse('c', source);
     const node = findTargetFunction(root, 'bar');
     expect(node).not.toBeNull();
     expect(node!.text()).toContain('return 2');
@@ -43,13 +43,13 @@ int baz(void) { return 3; }
 
   it('does not match partial function names', () => {
     const source = 'int foobar(void) { return 1; }';
-    const root = parseC(source);
+    const root = parse('c', source);
     expect(findTargetFunction(root, 'foo')).toBeNull();
   });
 
   it('handles function names with special regex characters', () => {
     // Unlikely in practice, but escapeRegex should prevent injection
-    const root = parseC('int normal(void) { return 1; }');
+    const root = parse('c', 'int normal(void) { return 1; }');
     expect(findTargetFunction(root, 'foo.*bar')).toBeNull();
   });
 
@@ -61,7 +61,7 @@ void target(int x) {
   global_var = x;
 }
 `;
-    const root = parseC(source);
+    const root = parse('c', source);
     const node = findTargetFunction(root, 'target');
     expect(node).not.toBeNull();
     expect(node!.text()).toContain('global_var = x');
@@ -75,7 +75,7 @@ void target(int x) {
 describe('isInsideAsm', () => {
   it('returns false for a regular statement', () => {
     const source = 'void foo(void) { int a = 1; }';
-    const root = parseC(source);
+    const root = parse('c', source);
     const decl = root.root().find({ rule: { kind: 'declaration' } });
     expect(decl).not.toBeNull();
     expect(isInsideAsm(decl!)).toBe(false);
@@ -83,7 +83,7 @@ describe('isInsideAsm', () => {
 
   it('returns true for a node inside gnu_asm_expression', () => {
     const source = 'void foo(void) { asm("nop"); }';
-    const root = parseC(source);
+    const root = parse('c', source);
     const asmNode = root.root().find({ rule: { kind: 'gnu_asm_expression' } });
     if (asmNode) {
       // Find a child inside the asm
@@ -104,7 +104,7 @@ describe('isInsideAsm', () => {
   asm("nop");
   int b = 2;
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const decls = root.root().findAll({ rule: { kind: 'declaration' } });
     for (const decl of decls) {
       expect(isInsideAsm(decl)).toBe(false);
@@ -123,7 +123,7 @@ describe('getStatements', () => {
   a = 2;
   return;
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     const body = fn.find({ rule: { kind: 'compound_statement' } })!;
     const stmts = getStatements(body);
@@ -139,7 +139,7 @@ describe('getStatements', () => {
   /* block comment */
   a = 2;
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     const body = fn.find({ rule: { kind: 'compound_statement' } })!;
     const stmts = getStatements(body);
@@ -149,7 +149,7 @@ describe('getStatements', () => {
 
   it('returns empty array for empty function body', () => {
     const source = 'void foo(void) {}';
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     const body = fn.find({ rule: { kind: 'compound_statement' } })!;
     const stmts = getStatements(body);
@@ -170,7 +170,7 @@ describe('getDeclarations', () => {
   a = b;
   return;
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     const body = fn.find({ rule: { kind: 'compound_statement' } })!;
     const decls = getDeclarations(body);
@@ -184,7 +184,7 @@ describe('getDeclarations', () => {
   a = 1;
   return;
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     const body = fn.find({ rule: { kind: 'compound_statement' } })!;
     const decls = getDeclarations(body);
@@ -294,35 +294,35 @@ describe('escapeRegex', () => {
 describe('getIndentation', () => {
   it('returns indentation for a 2-space indented node', () => {
     const source = `void foo(void) {\n  int a = 1;\n}`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const decl = root.root().find({ rule: { kind: 'declaration' } })!;
     expect(getIndentation(source, decl)).toBe('  ');
   });
 
   it('returns indentation for a 4-space indented node', () => {
     const source = `void foo(void) {\n    int a = 1;\n}`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const decl = root.root().find({ rule: { kind: 'declaration' } })!;
     expect(getIndentation(source, decl)).toBe('    ');
   });
 
   it('returns indentation for a tab-indented node', () => {
     const source = `void foo(void) {\n\tint a = 1;\n}`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const decl = root.root().find({ rule: { kind: 'declaration' } })!;
     expect(getIndentation(source, decl)).toBe('\t');
   });
 
   it('returns empty string for a node with no indentation', () => {
     const source = 'int a = 1;';
-    const root = parseC(source);
+    const root = parse('c', source);
     const decl = root.root().find({ rule: { kind: 'declaration' } })!;
     expect(getIndentation(source, decl)).toBe('');
   });
 
   it('returns empty string for a node at the start of the file', () => {
     const source = 'void foo(void) {}';
-    const root = parseC(source);
+    const root = parse('c', source);
     const fn = findTargetFunction(root, 'foo')!;
     expect(getIndentation(source, fn)).toBe('');
   });

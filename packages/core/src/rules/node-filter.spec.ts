@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseC } from '~/parser.js';
+import { parse } from '~/parser.js';
 import { Rng } from '~/rng.js';
 
 import { CompositeNodeFilter } from './node-filter.js';
@@ -22,7 +22,7 @@ describe('CompositeNodeFilter', () => {
       const rng = new Rng(42);
 
       // Get declaration nodes
-      const root = parseC(source);
+      const root = parse('c', source);
       const decls = root.root().findAll({ rule: { kind: 'declaration' } });
       expect(decls.length).toBeGreaterThan(0);
 
@@ -38,7 +38,7 @@ describe('CompositeNodeFilter', () => {
       );
       const rng = new Rng(42);
 
-      const root = parseC(source);
+      const root = parse('c', source);
       const decls = root.root().findAll({ rule: { kind: 'declaration' } });
 
       // Should fall back to returning all nodes
@@ -55,7 +55,7 @@ describe('CompositeNodeFilter', () => {
       );
       const rng = new Rng(42);
 
-      const root = parseC(source);
+      const root = parse('c', source);
       const decls = root.root().findAll({ rule: { kind: 'declaration' } });
 
       // With strength=1.0, should always return only in-focus nodes
@@ -90,7 +90,7 @@ describe('CompositeNodeFilter', () => {
       );
       const rng = new Rng(42);
 
-      const root = parseC(source);
+      const root = parse('c', source);
       const decls = root.root().findAll({ rule: { kind: 'declaration' } });
 
       const filtered = filter.filter(decls, rng);

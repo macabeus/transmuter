@@ -145,8 +145,7 @@ export class MutationSearch {
     let compiler: Compiler | undefined;
 
     try {
-      // Ensure language grammar is registered
-      await ensureLanguageRegistered(this.#language);
+      ensureLanguageRegistered(this.#language);
 
       // Initialize scorer
       const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);

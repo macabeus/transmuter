@@ -4,8 +4,8 @@ import { ensureLanguageRegistered } from '~/parser.js';
 import { noCStyleCast } from './no-c-style-cast.js';
 
 describe('no-c-style-cast', () => {
-  beforeAll(async () => {
-    await ensureLanguageRegistered('cpp');
+  beforeAll(() => {
+    ensureLanguageRegistered('cpp');
   });
 
   describe('simple cast of an identifier', () => {

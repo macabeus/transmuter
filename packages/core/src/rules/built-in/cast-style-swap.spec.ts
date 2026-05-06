@@ -5,8 +5,8 @@ import { makeRuleCtx } from '../test-utils.js';
 import { castStyleSwap } from './cast-style-swap.js';
 
 describe('cast-style-swap', () => {
-  beforeAll(async () => {
-    await ensureLanguageRegistered('cpp');
+  beforeAll(() => {
+    ensureLanguageRegistered('cpp');
   });
 
   it('converts C-style cast to static_cast', () => {

@@ -5,8 +5,8 @@ import { makeRuleCtx } from '../test-utils.js';
 import { explicitThis } from './explicit-this.js';
 
 describe('explicit-this', () => {
-  beforeAll(async () => {
-    await ensureLanguageRegistered('cpp');
+  beforeAll(() => {
+    ensureLanguageRegistered('cpp');
   });
 
   it('adds explicit this-> to a member access', () => {

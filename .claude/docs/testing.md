@@ -114,7 +114,7 @@ describe('my-rule', () => {
 });
 ```
 
-For C++, `await ensureLanguageRegistered('cpp')` in a `beforeAll`. For Pascal, `parse('pascal', source)` — the grammar registers synchronously.
+All three grammars (C, C++, Pascal) register synchronously, and `parse(language, source)` auto-registers on first use. Calling `ensureLanguageRegistered` in a `beforeAll` is only useful if you want to surface registration errors up-front rather than on first parse.
 
 ## Fixture tests — full pipeline
 

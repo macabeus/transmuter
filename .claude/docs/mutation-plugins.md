@@ -70,7 +70,7 @@ packages/core/src/rules/
 
 1. Create `packages/core/src/rules/built-in/<rule-name>.ts`.
 2. Implement the `Rule` interface. Use helpers from `../helpers.js` (and `../pascal-helpers.js` for Pascal).
-3. Add a co-located `<rule-name>.spec.ts`. At minimum: one positive test showing the mutation fires, one negative test returning null. Use `parse('c', source)` from `~/parser.js` (or `await ensureLanguageRegistered('cpp')` first for C++).
+3. Add a co-located `<rule-name>.spec.ts`. At minimum: one positive test showing the mutation fires, one negative test returning null. Use `parse(<language>, source)` from `~/parser.js` — it auto-registers the grammar.
 4. Register in `packages/core/src/rules/built-in/index.ts` — import, add to `builtInRules`, add to the re-exports.
 5. **Update the count** in the barrel file's comment (currently `/** All 49 built-in mutation rules. */`).
 6. If the rule is compiler-specific, consider adding it to a profile's `ruleWeights` in `packages/core/src/profiles/` (e.g., `agbcc.ts` boosts asm-barrier to 25). Or disable it in profiles where it's unsafe — `ido.ts` disables `asm-barrier` because IDO doesn't understand GCC asm syntax.

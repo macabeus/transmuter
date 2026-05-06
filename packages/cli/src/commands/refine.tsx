@@ -5,11 +5,13 @@ import {
   Cleanup,
   type CleanupEvent,
   Compiler,
+  type FocusConstraint,
   type Guideline,
   type RefinementResult,
   Refiner,
   type RefinerEvent,
   Scorer,
+  type ViolationHypothesis,
   builtInGuidelines,
   detectLanguage,
   ensureLanguageRegistered,
@@ -42,6 +44,8 @@ export interface RefineArgs {
   sourcePrefix?: string;
   api?: boolean;
   apiPort?: number;
+  focusConstraints?: FocusConstraint[];
+  violationHypotheses?: ViolationHypothesis[];
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +211,7 @@ function reduceRefineEvent(state: RefineState, event: RefinerEvent): RefineState
 async function listGuidelines(args: RefineArgs): Promise<void> {
   const source = await fs.readFile(args.sourceFile, 'utf-8');
   const language = detectLanguage(args.sourceFile);
-  await ensureLanguageRegistered(language);
+  ensureLanguageRegistered(language);
   const decompConfig = await loadDecompYaml(args.config, args.cwd);
   const transmuterConfig = decompConfig?.tools?.transmuter;
 
@@ -578,7 +582,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
       try {
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
-        await ensureLanguageRegistered(language);
+        ensureLanguageRegistered(language);
         const decompConfig = await loadDecompYaml(args.config, args.cwd);
         const transmuterConfig = decompConfig?.tools?.transmuter;
 
@@ -630,6 +634,8 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
           seed,
           diffSettings: transmuterConfig?.diffSettings,
           skipMerge: args.skipMerge,
+          focusConstraints: args.focusConstraints,
+          violationHypotheses: args.violationHypotheses,
           onEvent(event: RefinerEvent) {
             setState((s) => reduceRefineEvent(s, event));
           },

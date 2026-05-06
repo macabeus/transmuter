@@ -64,6 +64,9 @@ Refine Options:
   --skip-merge         Only run Phase 1 exploration, skip merge
   --no-cleanup         Skip cleanup after refinement
   --config <path>      Path to decomp.yaml
+  --constraints <path> JSON file with focusConstraints and/or
+                       violationHypotheses to guide each violation's
+                       sub-search. See .claude/docs/refine-mode.md.
 
 Profile-detect Options:
   --profile <id>       Force a specific profile instead of auto-detecting
@@ -161,6 +164,7 @@ async function main(): Promise<void> {
           'skip-merge': { type: 'boolean' },
           'no-cleanup': { type: 'boolean' },
           config: { type: 'string' },
+          constraints: { type: 'string' },
           'source-prefix': { type: 'string' },
           api: { type: 'boolean' },
           'api-port': { type: 'string' },
@@ -170,6 +174,27 @@ async function main(): Promise<void> {
       if (!positionals[0]) {
         console.error('Error: source file is required.\nUsage: transmuter refine <source.c> [options]');
         process.exit(1);
+      }
+
+      let focusConstraints: RefineArgs['focusConstraints'];
+      let violationHypotheses: RefineArgs['violationHypotheses'];
+      if (values.constraints) {
+        const fs = await import('fs/promises');
+        const raw = await fs.readFile(values.constraints, 'utf-8');
+        const parsed = JSON.parse(raw) as {
+          focusConstraints?: RefineArgs['focusConstraints'];
+          violationHypotheses?: Record<string, { source: string; description?: string }> | RefineArgs['violationHypotheses'];
+        };
+        focusConstraints = parsed.focusConstraints;
+        if (Array.isArray(parsed.violationHypotheses)) {
+          violationHypotheses = parsed.violationHypotheses;
+        } else if (parsed.violationHypotheses) {
+          violationHypotheses = Object.entries(parsed.violationHypotheses).map(([violationId, h]) => ({
+            violationId,
+            source: h.source,
+            description: h.description,
+          }));
+        }
       }
 
       const refineArgs: RefineArgs = {
@@ -187,6 +212,8 @@ async function main(): Promise<void> {
         skipMerge: values['skip-merge'],
         noCleanup: values['no-cleanup'],
         config: values.config,
+        focusConstraints,
+        violationHypotheses,
         sourcePrefix: values['source-prefix']
           ? await import('fs/promises').then((fs) => fs.readFile(values['source-prefix']!, 'utf-8'))
           : undefined,

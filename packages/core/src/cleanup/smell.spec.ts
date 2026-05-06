@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseC } from '~/parser.js';
+import { parse } from '~/parser.js';
 
 import { countSmells } from './smell.js';
 
 describe('countSmells', () => {
   it('returns zero for clean code', () => {
     const source = `int foo() { int x = 1; return x; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.tempVariables).toBe(0);
@@ -15,7 +15,7 @@ describe('countSmells', () => {
 
   it('counts temp variables (_tNNN pattern)', () => {
     const source = `int foo() { int _t1 = 0; int _t23 = 1; int normal = 2; return normal; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.tempVariables).toBe(2);
@@ -23,7 +23,7 @@ describe('countSmells', () => {
 
   it('counts cast expressions', () => {
     const source = `int foo(short a) { return (int)((short)a + (int)1); }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.casts).toBe(3);
@@ -31,7 +31,7 @@ describe('countSmells', () => {
 
   it('counts do-while(0) blocks', () => {
     const source = `void foo() { do { int x = 1; } while(0); do { int y = 2; } while(0); }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.doWhileZero).toBe(2);
@@ -39,7 +39,7 @@ describe('countSmells', () => {
 
   it('does not count do-while with non-zero condition', () => {
     const source = `void foo() { int x = 1; do { x--; } while(x); }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.doWhileZero).toBe(0);
@@ -47,7 +47,7 @@ describe('countSmells', () => {
 
   it('counts single-use variables', () => {
     const source = `int foo() { int x = 1; return x; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.singleUseVariables).toBe(1);
@@ -55,7 +55,7 @@ describe('countSmells', () => {
 
   it('does not count multi-use variables as single-use', () => {
     const source = `int foo() { int x = 1; x = x + 1; return x; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.singleUseVariables).toBe(0);
@@ -63,7 +63,7 @@ describe('countSmells', () => {
 
   it('counts total statements', () => {
     const source = `void foo() { int x = 1; x = x + 1; if (x > 0) { x = 0; } return; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     // 4 statements in outer block + 1 in if block
@@ -72,7 +72,7 @@ describe('countSmells', () => {
 
   it('returns zero for nonexistent function', () => {
     const source = `int bar() { return 0; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.total).toBe(0);
@@ -81,7 +81,7 @@ describe('countSmells', () => {
   it('computes weighted total', () => {
     // 1 temp var (10) + 1 do-while(0) (10) + 2 casts (6) + statements
     const source = `int foo(short a) { int _t1 = (int)a; do { _t1 = (int)a; } while(0); return _t1; }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'foo');
 
     expect(result.tempVariables).toBe(1);
@@ -110,7 +110,7 @@ do {
 } while(0);
     return (s16)(shifted >> 8);
 }`;
-    const root = parseC(source);
+    const root = parse('c', source);
     const result = countSmells(root, 'FixedMul8');
 
     expect(result.tempVariables).toBe(2); // _t533, _t267
@@ -135,8 +135,8 @@ do {
     s32 r = a * b;
     return r /= 256;
 }`;
-    const uglySmell = countSmells(parseC(ugly), 'FixedMul8');
-    const cleanSmell = countSmells(parseC(clean), 'FixedMul8');
+    const uglySmell = countSmells(parse('c', ugly), 'FixedMul8');
+    const cleanSmell = countSmells(parse('c', clean), 'FixedMul8');
 
     expect(cleanSmell.total).toBeLessThan(uglySmell.total);
   });

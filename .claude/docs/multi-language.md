@@ -26,15 +26,15 @@ Long-form how-to: `docs/adding-a-language.md` in the repo root. This doc is the 
 
 ## Grammar registration
 
-Grammars register lazily on first use. **Call `ensureLanguageRegistered(language)` during initialization** for any consumer — `MutationSearch` already does this internally, but if you're building on top of lower-level pieces (e.g., a test harness or a custom runner), you must await it yourself for C++.
+Grammars register lazily on first use. `parse(language, source)` calls `ensureLanguageRegistered(language)` internally, so most callers don't need to register explicitly. `MutationSearch` and the other pipeline entry points still call it during initialization to surface registration errors up-front.
 
-| Language | Package | Registration | Async? |
-|---|---|---|---|
-| C | `tree-sitter-c` | `registerDynamicLanguage()` loading `prebuilds/*/tree-sitter-c.node` | sync |
-| C++ | `@ast-grep/lang-cpp` | `registerDynamicLanguage({ cpp: (await import(...)).default })` | **async** |
-| Pascal | `tree-sitter-pascal` (Isopod/tree-sitter-pascal) | `registerDynamicLanguage()` loading `build/Release/tree_sitter_pascal_binding.node` | sync |
+| Language | Package | Registration |
+|---|---|---|
+| C | `tree-sitter-c` | `registerDynamicLanguage()` loading `prebuilds/*/tree-sitter-c.node` |
+| C++ | `@ast-grep/lang-cpp` | `registerDynamicLanguage({ cpp: cppLang })` from a static default import |
+| Pascal | `tree-sitter-pascal` (Isopod/tree-sitter-pascal) | `registerDynamicLanguage()` loading `build/Release/tree_sitter_pascal_binding.node` |
 
-**C++ is async** because the `@ast-grep/lang-cpp` package exports a `LangRegistration` via an ES default export. `parse('cpp', source)` will throw if you haven't awaited `ensureLanguageRegistered('cpp')` first. C and Pascal fall back to synchronous registration inside `parse()`.
+All three are synchronous. `ensureLanguageRegistered` returns `void`, not `Promise<void>`.
 
 ## How language flows through the pipeline
 
@@ -93,7 +93,7 @@ Full walk-through in `docs/adding-a-language.md`. Sketch:
 1. Add the variant to `Language` union in `language.ts`.
 2. Add file extensions to `EXTENSION_MAP`.
 3. Pick a tree-sitter grammar (prefer `@ast-grep/lang-<lang>` if it exists). Add it as a `packages/core` dep via `pnpm add … --filter @transmuter/core`.
-4. Add a `ensure<Lang>Registered()` function in `parser.ts` and wire it into the `ensureLanguageRegistered()` switch and `parse()` helper. Decide whether it can be synchronous.
+4. Add a `ensure<Lang>Registered()` function in `parser.ts` and wire it into the `ensureLanguageRegistered()` switch. Keep it synchronous — that's what every other language does.
 5. Add helpers in `rules/helpers.ts` (or a new `<lang>-helpers.ts`) for finding the target function and iterating statements/declarations. Every rule starts by finding the target function — you must give rules a language-native way to do that.
 6. Add the file extension to `LANG_EXT` in `compiler/compiler.ts` so temp files get the right suffix.
 7. Add at least one rule and one guideline that declare the new language in their `languages` field.
@@ -101,7 +101,6 @@ Full walk-through in `docs/adding-a-language.md`. Sketch:
 
 ## Pitfalls
 
-- **Forgetting `await ensureLanguageRegistered('cpp')`.** You'll get a cryptic ast-grep error from the first `parse('cpp', ...)`. Symptoms: "Language cpp not registered" or a native binding failure.
 - **Writing a C-only rule but declaring `['c', 'cpp']`.** The engine will hand your `apply()` a C++ `SgRoot`, which may have different child kinds than expected (e.g., qualified ids, templates). `findTargetFunction` in `helpers.ts` handles C++ mangled/qualified names; start there and test with a C++ fixture.
 - **Pascal case sensitivity.** Any rule that compares function/variable names against the source must compare case-insensitively for Pascal, even though ast-grep itself is case-sensitive.
 - **Language-specific node-kind typos.** ast-grep silently returns `[]` from `findAll({ rule: { kind: 'typo' } })`. Always add a positive test that fails loudly if the kind string is wrong.

@@ -148,7 +148,7 @@ self.onerror = (event: ErrorEvent) => {
 
 async function handleInit(msg: WorkerInit): Promise<void> {
   const t0 = performance.now();
-  await ensureLanguageRegistered(msg.language);
+  ensureLanguageRegistered(msg.language);
 
   const registry = new RuleRegistry();
   registry.registerAll(builtInRules);

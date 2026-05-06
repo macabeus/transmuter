@@ -232,7 +232,7 @@ export class Cleanup {
   async run(): Promise<CleanupResult> {
     const startTime = Date.now();
     const language = this.#opts.language ?? 'c';
-    await ensureLanguageRegistered(language);
+    ensureLanguageRegistered(language);
 
     const emit = (event: CleanupEvent) => {
       try {

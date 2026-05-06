@@ -328,7 +328,7 @@ Each language has a tree-sitter grammar registered on first use in `parser.ts`:
 | C++ | `@ast-grep/lang-cpp` | `registerDynamicLanguage()` — official ast-grep package with platform binaries |
 | Pascal | `tree-sitter-pascal` | `registerDynamicLanguage()` — loads from `build/Release/` (node-gyp build) |
 
-C and Pascal registration is synchronous. C++ requires an async import (`ensureLanguageRegistered('cpp')` is async). Callers must call `ensureLanguageRegistered(language)` during initialization for C++; C and Pascal are registered lazily.
+All three languages register synchronously via `ensureLanguageRegistered(language)`. `parse()` calls it internally, so explicit registration is only needed if you're warming up the grammar before parse time.
 
 ### Pascal AST
 

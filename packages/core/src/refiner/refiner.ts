@@ -376,7 +376,7 @@ export class Refiner {
   /** Run the refinement. */
   async refine(): Promise<RefinementResult> {
     const language = this.#opts.language ?? 'c';
-    await ensureLanguageRegistered(language);
+    ensureLanguageRegistered(language);
 
     const startTime = Date.now();
     const emit = (event: RefinerEvent) => {

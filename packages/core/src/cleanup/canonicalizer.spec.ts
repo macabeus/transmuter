@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseC } from '~/parser.js';
+import { parse } from '~/parser.js';
 import { findTargetFunction } from '~/rules/helpers.js';
 
 /**
@@ -24,7 +24,7 @@ describe('canonicalizer pass patterns', () => {
         x = 1;
     } while(0);
 }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
       const doStmts = fn.findAll({ rule: { kind: 'do_statement' } });
       expect(doStmts.length).toBe(1);
@@ -38,7 +38,7 @@ describe('canonicalizer pass patterns', () => {
 
     it('does not match do-while with non-zero condition', () => {
       const source = `void foo() { int x = 5; do { x--; } while(x); }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
       const doStmts = fn.findAll({ rule: { kind: 'do_statement' } });
       expect(doStmts.length).toBe(1);
@@ -52,7 +52,7 @@ describe('canonicalizer pass patterns', () => {
   describe('dead variable elimination', () => {
     it('identifies unused declared variables', () => {
       const source = `void foo() { int dead = 42; int used = 1; return used; }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
 
       // Find all init_declarators
@@ -71,7 +71,7 @@ describe('canonicalizer pass patterns', () => {
 
     it('does not flag variables that are read', () => {
       const source = `int foo() { int x = 1; return x + 1; }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
 
       const decls = fn.findAll({ rule: { kind: 'init_declarator' } });
@@ -88,7 +88,7 @@ describe('canonicalizer pass patterns', () => {
   describe('single-use variable inlining', () => {
     it('identifies single-use variable pattern', () => {
       const source = `int foo() { int temp = 42; return temp; }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
 
       const decls = fn.findAll({ rule: { kind: 'init_declarator' } });
@@ -110,7 +110,7 @@ describe('canonicalizer pass patterns', () => {
   describe('redundant cast removal', () => {
     it('identifies cast expressions and their inner values', () => {
       const source = `int foo(int x) { return (int)x; }`;
-      const root = parseC(source);
+      const root = parse('c', source);
       const fn = findTargetFunction(root, 'foo')!;
 
       const casts = fn.findAll({ rule: { kind: 'cast_expression' } });

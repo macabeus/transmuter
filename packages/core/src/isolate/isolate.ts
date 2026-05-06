@@ -25,7 +25,7 @@
  */
 import type { SgNode } from '@ast-grep/napi';
 
-import { parseC } from '../parser.js';
+import { parse } from '../parser.js';
 
 export interface IsolateResult {
   /** The isolated source. */
@@ -40,7 +40,7 @@ export interface IsolateResult {
  * Throws if the target function is not found.
  */
 export function isolateFunction(source: string, functionName: string): IsolateResult {
-  const root = parseC(source);
+  const root = parse('c', source);
   const fnDefs = root.root().findAll({ rule: { kind: 'function_definition' } });
 
   const targetFn = fnDefs.find((fn) => getFunctionName(fn) === functionName);

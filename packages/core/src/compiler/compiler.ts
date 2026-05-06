@@ -141,7 +141,7 @@ export class Compiler {
     stderrPath: string,
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     // Route child stdout/stderr to regular files (fd stdio) rather than
-    // IPC pipes. Writing Wine-backed subprocess stderr through a Node/Bun pipe
+    // IPC pipes. Writing Wine-backed subprocess stderr through a Bun pipe
     // adds ~5 s of wall per compile on macOS (Wine Crossover + mwcceppc); fd
     // stdio has no such penalty. We read the files after the child exits.
     let stdoutFd: number | undefined;

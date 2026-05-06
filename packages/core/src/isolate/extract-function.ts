@@ -1,17 +1,10 @@
+import { escapeRegex } from '~/rules/helpers.js';
+
 /**
  * Slice the textual definition of a single C function out of a larger source.
  *
- * Used at report serialization time so the webapp's "Source" / "Source Diff"
- * tabs show only the code Transmuter actually mutates — the target function
- * body — rather than the full surrounding TU.
- *
- * The implementation is a brace-balanced scan rather than an AST parse: it
- * runs in O(n) per source and avoids loading ast-grep on the consumer.
- *
  * Returns the original `source` if no definition for `functionName` is found.
  */
-import { escapeRegex } from '~/rules/helpers.js';
-
 export function extractFunctionDefinition(source: string, functionName: string): string {
   const re = new RegExp(`\\b${escapeRegex(functionName)}\\s*\\(`, 'g');
 
