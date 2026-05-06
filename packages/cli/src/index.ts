@@ -14,6 +14,7 @@ import { type CtlArgs, ctlCommand } from './commands/ctl.js';
 import { type MatchArgs, matchCommand } from './commands/match.js';
 import { type ProfileDetectArgs, profileDetectCommand } from './commands/profile-detect.js';
 import { type RefineArgs, refineCommand } from './commands/refine.js';
+import { loadConstraints } from './load-constraints.js';
 
 const USAGE = `
 Usage: transmuter <command> [options]
@@ -48,6 +49,10 @@ Match Options:
   --version <name>     Version name for multi-version projects
   --api                Start HTTP control server for external access
   --api-port <n>       Fixed port for the API server (default: random)
+  --constraints <path> JSON file with focusConstraints (focus-region,
+                       avoid-region, hypothesis) to bias mutation
+                       selection. See .claude/docs/refine-mode.md for
+                       the schema (violationHypotheses is refine-only).
 
 Refine Options:
   --target <path>      Path to target object file (.o)
@@ -110,12 +115,21 @@ async function main(): Promise<void> {
           'source-prefix': { type: 'string' },
           api: { type: 'boolean' },
           'api-port': { type: 'string' },
+          constraints: { type: 'string' },
         },
       });
 
       if (!positionals[0]) {
         console.error('Error: source file is required.\nUsage: transmuter match <source.c> [options]');
         process.exit(1);
+      }
+
+      const matchConstraints = values.constraints ? await loadConstraints(values.constraints) : undefined;
+      if (matchConstraints?.violationHypotheses?.length) {
+        console.error(
+          'Warning: violationHypotheses in constraints file are ignored by `match` ' +
+            '(they are refine-only). Pass `hypothesis` constraints inside focusConstraints instead.',
+        );
       }
 
       const matchArgs: MatchArgs = {
@@ -140,6 +154,7 @@ async function main(): Promise<void> {
           : undefined,
         api: values.api,
         apiPort: values['api-port'] ? Number(values['api-port']) : undefined,
+        focusConstraints: matchConstraints?.focusConstraints,
       };
 
       await matchCommand(matchArgs);
@@ -176,26 +191,9 @@ async function main(): Promise<void> {
         process.exit(1);
       }
 
-      let focusConstraints: RefineArgs['focusConstraints'];
-      let violationHypotheses: RefineArgs['violationHypotheses'];
-      if (values.constraints) {
-        const fs = await import('fs/promises');
-        const raw = await fs.readFile(values.constraints, 'utf-8');
-        const parsed = JSON.parse(raw) as {
-          focusConstraints?: RefineArgs['focusConstraints'];
-          violationHypotheses?: Record<string, { source: string; description?: string }> | RefineArgs['violationHypotheses'];
-        };
-        focusConstraints = parsed.focusConstraints;
-        if (Array.isArray(parsed.violationHypotheses)) {
-          violationHypotheses = parsed.violationHypotheses;
-        } else if (parsed.violationHypotheses) {
-          violationHypotheses = Object.entries(parsed.violationHypotheses).map(([violationId, h]) => ({
-            violationId,
-            source: h.source,
-            description: h.description,
-          }));
-        }
-      }
+      const refineConstraints = values.constraints ? await loadConstraints(values.constraints) : undefined;
+      const focusConstraints = refineConstraints?.focusConstraints;
+      const violationHypotheses = refineConstraints?.violationHypotheses;
 
       const refineArgs: RefineArgs = {
         sourceFile: positionals[0],

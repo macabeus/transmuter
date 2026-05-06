@@ -4,6 +4,7 @@
 import {
   Cleanup,
   type CleanupEvent,
+  type FocusConstraint,
   MutationSearch,
   type MutationSearchEvent,
   type MutationSearchOptions,
@@ -43,6 +44,7 @@ export interface MatchArgs {
   sourcePrefix?: string;
   api?: boolean;
   apiPort?: number;
+  focusConstraints?: FocusConstraint[];
 }
 
 function formatDuration(ms: number): string {
@@ -413,6 +415,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         // Create session store
         const store = new SessionStore({
           metadata: { label: `${fnName} — CLI match` },
+          focusConstraints: args.focusConstraints,
         });
         storeRef.current = store;
         store.setOriginalSource(finalSource);
@@ -433,7 +436,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           lateralForkBudget: 0,
           ruleWeights: transmuterConfig?.ruleWeights ?? {},
           disabledRules: transmuterConfig?.disabledRules ?? [],
-          focusConstraints: [],
+          focusConstraints: args.focusConstraints ?? [],
         } satisfies SessionConfig);
 
         const opts: MutationSearchOptions = {
@@ -453,6 +456,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           disabledRules: transmuterConfig?.disabledRules,
           diffSettings: transmuterConfig?.diffSettings,
           sourcePrefix: args.sourcePrefix,
+          focusConstraints: args.focusConstraints,
           onEvent(event: MutationSearchEvent) {
             setState((s) => reduceEvent(s, event));
             store.push(event);
