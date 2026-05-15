@@ -4,12 +4,13 @@
  * Score = instruction-level difference count between candidate and target.
  * Lower is better, 0 = perfect match.
  */
+import type * as ObjdiffWasm from 'objdiff-wasm';
+import type { AssemblyScoreResult, DiffBreakdown } from '~/types.js';
 
-// objdiff-wasm types — imported dynamically to handle WASM loading
-type ObjdiffModule = typeof import('objdiff-wasm');
-type ParsedObject = import('objdiff-wasm').diff.Object;
-type ObjectDiff = import('objdiff-wasm').diff.ObjectDiff;
-type DiffConfig = import('objdiff-wasm').diff.DiffConfig;
+type ObjdiffModule = typeof ObjdiffWasm;
+type ParsedObject = ObjdiffWasm.diff.Object;
+type ObjectDiff = ObjdiffWasm.diff.ObjectDiff;
+type DiffConfig = ObjdiffWasm.diff.DiffConfig;
 
 /** Lazy singleton for the WASM module. */
 let wasmModulePromise: Promise<ObjdiffModule> | null = null;
@@ -87,7 +88,7 @@ export class Scorer {
    * Score a candidate and also extract assembly + diff in one pass.
    * Avoids re-parsing the object file compared to calling score() + assemblyDiff() separately.
    */
-  async scoreWithAssembly(candidateObjPath: string): Promise<import('~/types.js').AssemblyScoreResult | null> {
+  async scoreWithAssembly(candidateObjPath: string): Promise<AssemblyScoreResult | null> {
     if (!this.#objdiff || !this.#targetObj || !this.#diffConfig) {
       throw new Error('Scorer not initialized — call init() first');
     }
@@ -264,7 +265,7 @@ export class Scorer {
     return result.trim();
   }
 
-  #extractDiffBreakdown(leftDiff: ObjectDiff, rightDiff: ObjectDiff): import('~/types.js').DiffBreakdown | null {
+  #extractDiffBreakdown(leftDiff: ObjectDiff, rightDiff: ObjectDiff): DiffBreakdown | null {
     const objdiff = this.#objdiff!;
     const diffConfig = this.#diffConfig!;
 

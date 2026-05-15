@@ -3,8 +3,6 @@
  *
  * Shared class wrapping objdiff-wasm.
  * Provides functionality to parse object files and extract assembly.
- *
- * Ported from Mizuchi's src/shared/objdiff.ts.
  */
 import type * as ObjdiffWasm from 'objdiff-wasm';
 import type { DiffType, StructuredDifference } from '~/types.js';

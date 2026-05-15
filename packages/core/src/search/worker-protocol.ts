@@ -2,16 +2,8 @@
  * Typed message protocol between the main thread's SlotOrchestrator and each
  * slot worker running the mutate → dedup → compile → score pipeline.
  *
- * Design notes:
- * - Kept in a dedicated file (no runtime imports) so both ends can import just
- *   the types without pulling in the rest of core.
- * - `candidateSource` crosses the boundary via structured clone (fast path for
- *   strings). An ArrayBuffer transferable is accepted only for the optional
- *   `adaptiveSnapshot` field on init and on rebroadcasts.
- * - `WorkerResult.scored` payload is deliberately flat so Main's result handler
- *   can forward most fields straight into a `forked` MutationSearchEvent.
- *
- * See BUN_WORKERS_PLAN.md §4 for the full design rationale.
+ * Types-only so both ends can import the protocol without pulling in the rest
+ * of core (workers stay light on init).
  */
 import type { Language } from '~/language.js';
 import type { AvoidRegionConstraint, DiffBreakdown, FocusRegionConstraint, MutationLocation } from '~/types.js';

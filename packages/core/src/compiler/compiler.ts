@@ -212,8 +212,7 @@ async function readTruncated(filePath: string): Promise<string> {
     if (!(await file.exists())) {
       return '';
     }
-    const size = file.size;
-    if (size > 50_000) {
+    if (file.size > 50_000) {
       const buf = new Uint8Array(await file.slice(0, 50_000).arrayBuffer());
       return new TextDecoder().decode(buf) + '\n... (truncated)';
     }
