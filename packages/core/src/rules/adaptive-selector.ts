@@ -230,8 +230,10 @@ export class AdaptiveSelector {
   /**
    * Serialize the entire Thompson Sampling state as a transferable byte buffer.
    * Intended for shipping stats to worker threads at init time or on periodic
-   * rebroadcast. The bytes are JSON-encoded UTF-8; simplicity over compactness —
-   * snapshots are small (~a few KB for realistic sessions) and sent infrequently.
+   * rebroadcast. The bytes are JSON-encoded UTF-8; simplicity over compactness.
+   * Size scales with active rules × targets × windowSize (boolean arrays
+   * dominate); sent infrequently via SlotOrchestrator's iteration-counted
+   * rebroadcast, so cost is bounded by rebroadcast frequency, not iteration rate.
    */
   serialize(): Uint8Array {
     const snapshot: AdaptiveSnapshotV1 = {

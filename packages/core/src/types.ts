@@ -243,6 +243,7 @@ export type MutationSearchEvent =
     }
   | { type: 'perfect-match'; iteration: number; source: string; candidateId: string }
   | { type: 'compilation-error'; mutationTargetId: string; ruleId: string; error: string }
+  | { type: 'scorer-failed'; mutationTargetId: string; ruleId: string; error: string }
   | {
       type: 'stats';
       iteration: number;

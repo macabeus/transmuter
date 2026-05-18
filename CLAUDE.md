@@ -19,7 +19,7 @@ pnpm run test:fixture -- --fade-out-controller   # single fixture
 
 # Core package dev (watch build, no DTS)
 pnpm --filter @transmuter/core run build:esm
-pnpm --filter @transmuter/core run dev     # tsup --watch
+pnpm --filter @transmuter/core run dev     # bun --watch run build.ts
 
 # CLI — dev mode auto-builds core first (predev hook)
 pnpm --filter @transmuter/cli run dev -- match path/to/source.c

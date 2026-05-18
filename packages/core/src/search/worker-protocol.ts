@@ -82,13 +82,11 @@ export type WorkerResult =
   | {
       readonly kind: 'no-mutation';
       readonly jobId: number;
-      readonly mutationTargetId: string;
       readonly timings: PhaseTimings;
     }
   | {
       readonly kind: 'dedup';
       readonly jobId: number;
-      readonly mutationTargetId: string;
       readonly timings: PhaseTimings;
     }
   | {
@@ -96,7 +94,6 @@ export type WorkerResult =
       readonly jobId: number;
       readonly mutationTargetId: string;
       readonly ruleId: string;
-      readonly location: MutationLocation;
       readonly error: string;
       readonly timings: PhaseTimings;
     }
@@ -112,7 +109,6 @@ export type WorkerResult =
       readonly jobId: number;
       readonly mutationTargetId: string;
       readonly ruleId: string;
-      readonly location: MutationLocation;
       readonly error: string;
       readonly timings: PhaseTimings;
     }

@@ -175,7 +175,7 @@ Test runner: `bun --bun vitest run`. The `--bun` flag forces vitest's Node sheba
 
 - **TypeScript:** strict mode, `strictNullChecks: true`, `noUncheckedIndexedAccess: true`. `types: ["node", "bun"]` in `tsconfig.base.json` (`@types/bun` ships `Bun.*` and related globals).
 - **Module system:** ESM (`"type": "module"`)
-- **Build:** `tsup` for `@transmuter/core` (ESM output). `build:esm` script for fast dev builds (skips DTS). CLI has `predev` hook that auto-rebuilds core before running
+- **Build:** both `@transmuter/core` and `@transmuter/cli` bundle with `bun build` (see each package's `build.ts`). Core also runs `tsc --emitDeclarationOnly` for published types; `build:esm` skips that step for fast dev rebuilds. CLI has a `predev` hook that auto-rebuilds core before running.
 - **Dev scripts:** `bun run <entry>.ts` — Bun runs TypeScript natively, no `tsx`/`ts-node`
 - **Path aliases:** `~` -> `./src` within core package
 - **Workspace:** pnpm workspaces with `workspace:*` protocol (pnpm stays as the package manager on top of Bun's runtime)
@@ -296,7 +296,7 @@ The 8-way win on agbcc-native comes from removing main-event-loop stall on `awai
 
 Runtime control hooks (`updateWeights`, `enableRule`, `disableRule`, `setFocusConstraints`, `setMutationDepth`) fan out to all workers via control messages — `SlotOrchestrator.broadcastRules()` / `setFocusConstraints()` / `setMutationDepth()` respectively. Pool mutations remain on main only.
 
-Worker entry: `packages/core/src/search/slot-worker.ts`, shipped as a separate tsup entry and resolved at runtime via the `@transmuter/core/slot-worker` package export.
+Worker entry: `packages/core/src/search/slot-worker.ts`, shipped as a separate bundle entry (see `packages/core/build.ts`) and resolved at runtime via the `@transmuter/core/slot-worker` package export.
 
 ---
 

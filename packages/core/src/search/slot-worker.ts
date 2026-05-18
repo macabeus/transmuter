@@ -20,7 +20,8 @@
  *
  * Module resolution note: this file lives inside @transmuter/core and imports
  * core internals via ~ alias + relative paths, so the Bun Worker constructor
- * must point at the built slot-worker.js (shipped as a separate tsup entry).
+ * must point at the built slot-worker.js (shipped as a separate bundler entry
+ * — see `packages/core/build.ts`).
  */
 import { Compiler } from '~/compiler/compiler.js';
 import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
@@ -226,7 +227,6 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
     post({
       kind: 'no-mutation',
       jobId: job.jobId,
-      mutationTargetId: job.mutationTargetId,
       timings: { mutate: mutateMs, parse: parseMs, ruleApply: ruleApplyMs },
     });
     return;
@@ -240,7 +240,6 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
     post({
       kind: 'dedup',
       jobId: job.jobId,
-      mutationTargetId: job.mutationTargetId,
       timings: { mutate: mutateMs, parse: parseMs, ruleApply: ruleApplyMs, dedup: dedupMs },
     });
     return;
@@ -265,7 +264,6 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
       jobId: job.jobId,
       mutationTargetId: job.mutationTargetId,
       ruleId,
-      location: mutation.location,
       error: compileResult.error,
       timings,
     });
@@ -295,7 +293,6 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
       jobId: job.jobId,
       mutationTargetId: job.mutationTargetId,
       ruleId,
-      location: mutation.location,
       error: 'scorer returned null (function symbol not found)',
       timings: {
         mutate: mutateMs,

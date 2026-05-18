@@ -80,4 +80,59 @@ describe('CircularBuffer', () => {
       expect(copy.push(5)).toBe(2);
     });
   });
+
+  describe('toSnapshot / fromSnapshot', () => {
+    it('round-trips an empty buffer', () => {
+      const a = new CircularBuffer<number>(3);
+      const b = CircularBuffer.fromSnapshot<number>(a.toSnapshot());
+
+      expect(b.size).toBe(0);
+      // Behaves like a fresh buffer
+      expect(b.push(1)).toBeUndefined();
+      expect(b.push(2)).toBeUndefined();
+      expect(b.push(3)).toBeUndefined();
+      expect(b.push(4)).toBe(1);
+    });
+
+    it('round-trips a partial buffer (no wrap yet)', () => {
+      const a = new CircularBuffer<number>(5);
+      a.push(10);
+      a.push(20);
+
+      const b = CircularBuffer.fromSnapshot<number>(a.toSnapshot());
+      expect(b.size).toBe(2);
+      // The next 3 pushes fill remaining slots; the 6th push evicts the oldest (10).
+      expect(b.push(30)).toBeUndefined();
+      expect(b.push(40)).toBeUndefined();
+      expect(b.push(50)).toBeUndefined();
+      expect(b.push(60)).toBe(10);
+    });
+
+    it('round-trips a full buffer at head=0 (just wrapped)', () => {
+      const a = new CircularBuffer<number>(3);
+      a.push(1);
+      a.push(2);
+      a.push(3); // size=3, head wrapped back to 0
+
+      const b = CircularBuffer.fromSnapshot<number>(a.toSnapshot());
+      expect(b.push(4)).toBe(1); // oldest
+      expect(b.push(5)).toBe(2);
+      expect(b.push(6)).toBe(3);
+    });
+
+    it('round-trips a full buffer with head mid-array', () => {
+      const a = new CircularBuffer<number>(3);
+      a.push(1);
+      a.push(2);
+      a.push(3);
+      a.push(4); // evicts 1, head=1
+      a.push(5); // evicts 2, head=2
+      // Internal layout: buffer=[4,5,3], head=2, size=3; next eviction is 3.
+
+      const b = CircularBuffer.fromSnapshot<number>(a.toSnapshot());
+      expect(b.push(6)).toBe(3);
+      expect(b.push(7)).toBe(4);
+      expect(b.push(8)).toBe(5);
+    });
+  });
 });

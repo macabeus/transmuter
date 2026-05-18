@@ -65,8 +65,6 @@ export interface SlotOrchestratorOptions {
    */
   adaptiveRebroadcastEvery?: number;
   prefetchDepth?: number;
-  /** Optional URL to the built `slot-worker.js` (overridable for tests that load from src). */
-  workerEntry?: URL;
 }
 
 interface WorkerSlot {
@@ -303,18 +301,16 @@ export class SlotOrchestrator {
     // Resolve the slot-worker entry two ways:
     //  - In tests (vitest running src/), the orchestrator lives alongside
     //    `slot-worker.ts`, so the sibling URL works.
-    //  - In built dist, tsup inlines the orchestrator into `dist/index.js`
+    //  - In built dist, the orchestrator is bundled into `dist/index.js`
     //    while slot-worker is emitted separately as `dist/search/slot-worker.js`.
     //    The package.json `./slot-worker` export handles that case via
     //    `import.meta.resolve`.
-    const resolveEntry = (): URL => {
-      try {
-        return new URL(import.meta.resolve('@transmuter/core/slot-worker'));
-      } catch {
-        return new URL('./slot-worker.js', import.meta.url);
-      }
-    };
-    const workerUrl = this.#opts.workerEntry ?? resolveEntry();
+    let workerUrl: URL;
+    try {
+      workerUrl = new URL(import.meta.resolve('@transmuter/core/slot-worker'));
+    } catch {
+      workerUrl = new URL('./slot-worker.js', import.meta.url);
+    }
     for (let slotId = 0; slotId < this.#opts.concurrency; slotId++) {
       const worker = new Worker(workerUrl);
       const slot: WorkerSlot = {
@@ -474,9 +470,8 @@ export class SlotOrchestrator {
     if (this.#opts.signal.aborted) {
       return true;
     }
-    // maxCompiles counts attempts that actually reached `compiler.compile()` —
-    // i.e. not killed by no-mutation or dedup. This matches Permuter and
-    // matches what users almost certainly mean when they cap a run.
+    // maxCompiles counts attempts that actually reached `compiler.compile()`
+    // i.e. not killed by no-mutation or dedup
     if (this.getCompileAttempts() >= this.#opts.maxCompiles) {
       return true;
     }
@@ -568,6 +563,12 @@ export class SlotOrchestrator {
         // bump errors and don't recordFailure on the target — the rule
         // didn't break compile, the symbol just wasn't readable.
         this.#slotStats.scorerFailures++;
+        this.#emit({
+          type: 'scorer-failed',
+          mutationTargetId: result.mutationTargetId,
+          ruleId: result.ruleId,
+          error: result.error,
+        });
         return;
       }
       case 'scored': {

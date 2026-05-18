@@ -49,7 +49,11 @@ export class CircularBuffer<T> {
       capacity: this.#buffer.length,
       head: this.#head,
       size: this.#size,
-      // Slice up to `size` in insertion order; values beyond `size` are uninitialised.
+      // Slice up to `size` in raw buffer order (not insertion order — when the
+      // buffer has wrapped, indices 0..size are physical positions, not chronological).
+      // fromSnapshot copies values back to the same indices and re-pins head/size,
+      // so eviction continues from the right slot. Slots beyond `size` are
+      // uninitialised and excluded.
       values: this.#buffer.slice(0, this.#size),
     };
   }

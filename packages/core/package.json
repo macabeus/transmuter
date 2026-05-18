@@ -17,9 +17,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
-    "build:esm": "tsup src/index.ts --format esm --sourcemap --clean --no-dts --tsconfig tsconfig.build.json",
-    "dev": "tsup --watch",
+    "build": "bun run build.ts && tsc --emitDeclarationOnly --project tsconfig.build.json",
+    "build:esm": "bun run build.ts",
+    "dev": "bun --watch run build.ts",
     "check-deps": "depcruise src --config .dependency-cruiser.cjs"
   },
   "dependencies": {
@@ -32,7 +32,6 @@
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",
-    "dependency-cruiser": "^17.3.10",
-    "tsup": "^8.0.0"
+    "dependency-cruiser": "^17.3.10"
   }
 }
