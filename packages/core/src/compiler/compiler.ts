@@ -85,28 +85,36 @@ export class Compiler {
       const stdoutPath = path.join(tmpDir, `output-${id}.stdout`);
       const stderrPath = path.join(tmpDir, `output-${id}.stderr`);
       const result = await this.#exec(rendered, stdoutPath, stderrPath);
-      await Promise.all([fs.unlink(stdoutPath).catch(() => {}), fs.unlink(stderrPath).catch(() => {})]);
 
-      await fs.unlink(inputPath).catch(() => {});
+      const cleanupAux = (): Promise<unknown> =>
+        Promise.all([
+          fs.unlink(stdoutPath).catch(() => {}),
+          fs.unlink(stderrPath).catch(() => {}),
+          fs.unlink(inputPath).catch(() => {}),
+        ]);
 
       if (result.exitCode !== 0) {
-        await fs.unlink(outputPath).catch(() => {});
+        await Promise.all([cleanupAux(), fs.unlink(outputPath).catch(() => {})]);
         return {
           success: false,
           error: result.stderr.trim() || result.stdout.trim() || `Compiler exited with code ${result.exitCode}`,
         };
       }
 
+      // exitCode 0 but no output file = misconfigured compilerCommand (e.g.
+      // missing `-o`). Surface that here rather than letting Scorer fail with
+      // a more cryptic message downstream.
       try {
         await fs.access(outputPath);
       } catch {
+        await cleanupAux();
         return { success: false, error: 'Compiler produced no output file' };
       }
 
+      await cleanupAux();
       return { success: true, objPath: outputPath };
     } catch (err) {
-      await fs.unlink(inputPath).catch(() => {});
-      await fs.unlink(outputPath).catch(() => {});
+      await Promise.all([fs.unlink(inputPath).catch(() => {}), fs.unlink(outputPath).catch(() => {})]);
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
@@ -200,6 +208,11 @@ export class Compiler {
     this.#signal?.removeEventListener('abort', onAbort);
     closeSync(stdoutFd);
     closeSync(stderrFd);
+    // Success: caller never reads stdout/stderr, so don't pay for the file
+    // reads. On failure or a `proc.exited` reject, surface what we have.
+    if (exitCode === 0 && fallbackErr === undefined) {
+      return { exitCode, stdout: '', stderr: '' };
+    }
     const [stdout, stderr] = await Promise.all([readTruncated(stdoutPath), readTruncated(stderrPath)]);
     return { exitCode, stdout, stderr: fallbackErr ?? stderr };
   }

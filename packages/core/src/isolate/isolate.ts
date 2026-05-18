@@ -23,9 +23,8 @@
  * same header. Stripping the macros breaks compilation. Macros are cheap to
  * tokenize, so the pragmatic trade-off is to leave them alone.
  */
-import type { SgNode } from '@ast-grep/napi';
-
 import { parse } from '../parser.js';
+import { getCFunctionName } from '../rules/helpers.js';
 
 export interface IsolateResult {
   /** The isolated source. */
@@ -43,7 +42,7 @@ export function isolateFunction(source: string, functionName: string): IsolateRe
   const root = parse('c', source);
   const fnDefs = root.root().findAll({ rule: { kind: 'function_definition' } });
 
-  const targetFn = fnDefs.find((fn) => getFunctionName(fn) === functionName);
+  const targetFn = fnDefs.find((fn) => getCFunctionName(fn) === functionName);
   if (!targetFn) {
     throw new Error(`isolateFunction: target function '${functionName}' not found in source`);
   }
@@ -93,13 +92,4 @@ export function isolateFunction(source: string, functionName: string): IsolateRe
   }
 
   return { source: result, bodiesStripped };
-}
-
-function getFunctionName(fn: SgNode): string | null {
-  const declarator = fn.find({ rule: { kind: 'function_declarator' } });
-  if (!declarator) {
-    return null;
-  }
-  const name = declarator.find({ rule: { kind: 'identifier' } });
-  return name?.text() ?? null;
 }

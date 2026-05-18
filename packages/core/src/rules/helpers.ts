@@ -107,6 +107,17 @@ export function findAllByKind(node: SgNode, kind: string): SgNode[] {
 }
 
 /**
+ * Extract the C/C++ name of a `function_definition` node. Returns null if the
+ * node doesn't carry a `function_declarator` + `identifier` (the canonical
+ * shape). Use this when iterating fn-defs and selecting by name.
+ */
+export function getCFunctionName(fn: SgNode): string | null {
+  const declarator = fn.find({ rule: { kind: 'function_declarator' } });
+  const name = declarator?.find({ rule: { kind: 'identifier' } });
+  return name?.text() ?? null;
+}
+
+/**
  * Find a Pascal function or procedure by name.
  * tree-sitter-pascal uses defProc > declProc > identifier.
  * Case-insensitive because IDO Pascal lowercases all symbol names.

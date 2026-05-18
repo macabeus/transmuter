@@ -15,7 +15,6 @@ import os from 'os';
 import { Compiler } from '~/compiler/compiler.js';
 import type { Language } from '~/language.js';
 import { ensureLanguageRegistered } from '~/parser.js';
-import { Deduplicator } from '~/pipeline/deduplicator.js';
 import { Pool } from '~/pipeline/pool.js';
 import type { SummarizeResult } from '~/pipeline/pool.js';
 import { getProfile } from '~/profiles/get-profile.js';
@@ -41,6 +40,11 @@ import type {
 } from '~/types.js';
 
 const DEFAULT_STATS_INTERVAL = 100;
+
+/** Default worker-slot count when the caller didn't supply `concurrency`. */
+export function defaultConcurrency(): number {
+  return Math.min(os.cpus().length, 4);
+}
 
 const DEFAULT_AUTO_COMPACT: Required<AutoCompactPolicy> = {
   staleAfterAttempts: 500,
@@ -147,11 +151,7 @@ export class MutationSearch {
     try {
       ensureLanguageRegistered(this.#language);
 
-      // Initialize scorer
       const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
-      await scorer.init();
-
-      // Compile and score the initial source to get baseline
       compiler = new Compiler({
         command: this.#opts.compilerCommand,
         cwd: this.#opts.cwd,
@@ -161,7 +161,8 @@ export class MutationSearch {
         sourcePrefix: this.#opts.sourcePrefix,
       });
 
-      const initialCompile = await compiler.compile(this.#opts.source);
+      // Scorer init (WASM + target parse) and the genesis compile share no state.
+      const [, initialCompile] = await Promise.all([scorer.init(), compiler.compile(this.#opts.source)]);
       if (!initialCompile.success) {
         const result: MutationSearchResult = {
           perfectMatch: false,
@@ -342,13 +343,7 @@ export class MutationSearch {
         }
       }
 
-      // Create deduplicator and add the initial source
-      const deduplicator = new Deduplicator();
-      deduplicator.checkAndAdd(this.#opts.source);
-
-      // Spawn N Bun Workers; each runs the full mutate→dedup→compile→score
-      // pipeline in its own thread. See packages/core/src/search/slot-orchestrator.ts.
-      const concurrency = this.#opts.concurrency ?? Math.min(os.cpus().length, 4);
+      const concurrency = this.#opts.concurrency ?? defaultConcurrency();
 
       this.#orchestrator = new SlotOrchestrator({
         pool: this.#pool,
@@ -722,7 +717,7 @@ export class MutationSearch {
   #maybeAutoCompact(candidateCount: number, emit: (event: MutationSearchEvent) => void): void {
     const policy = this.#autoCompact!;
     const active = this.#pool.getActiveTargets();
-    const concurrency = this.#opts.concurrency ?? Math.min(os.cpus().length, 4);
+    const concurrency = this.#opts.concurrency ?? defaultConcurrency();
 
     const { toDisable } = pickAutoCompactTargets(
       active,

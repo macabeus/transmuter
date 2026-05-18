@@ -138,9 +138,7 @@ describe('MutationSearch', () => {
     it('emits a "scored" event for every successful compile+score', async () => {
       const { events } = await runSearch({ maxCompiles: 10 });
 
-      const scored = events.filter(
-        (e): e is Extract<MutationSearchEvent, { type: 'scored' }> => e.type === 'scored',
-      );
+      const scored = events.filter((e): e is Extract<MutationSearchEvent, { type: 'scored' }> => e.type === 'scored');
       expect(scored.length).toBeGreaterThan(0);
       for (const event of scored) {
         expect(typeof event.score).toBe('number');

@@ -8,7 +8,7 @@ export { detectLanguage } from './language.js';
 export { ensureLanguageRegistered } from './parser.js';
 
 // Main class
-export { MutationSearch } from './search/mutation-search.js';
+export { MutationSearch, defaultConcurrency } from './search/mutation-search.js';
 export type { SummarizeResult } from './pipeline/pool.js';
 
 // Session store

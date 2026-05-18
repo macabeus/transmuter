@@ -12,9 +12,8 @@
  * the documented shape (`.claude/docs/refine-mode.md`); the array form matches
  * the canonical `ViolationHypothesis` type.
  */
-import fs from 'fs/promises';
-
 import type { FocusConstraint, ViolationHypothesis } from '@transmuter/core';
+import fs from 'fs/promises';
 
 export interface LoadedConstraints {
   focusConstraints?: FocusConstraint[];
@@ -25,9 +24,7 @@ export async function loadConstraints(filePath: string): Promise<LoadedConstrain
   const raw = await fs.readFile(filePath, 'utf-8');
   const parsed = JSON.parse(raw) as {
     focusConstraints?: FocusConstraint[];
-    violationHypotheses?:
-      | Record<string, { source: string; description?: string }>
-      | ViolationHypothesis[];
+    violationHypotheses?: Record<string, { source: string; description?: string }> | ViolationHypothesis[];
   };
 
   let violationHypotheses: ViolationHypothesis[] | undefined;

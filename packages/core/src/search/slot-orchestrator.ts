@@ -72,7 +72,6 @@ interface WorkerSlot {
   worker: Worker;
   pending: number;
   ready: Promise<void>;
-  inflight: Map<number, { targetId: string; startedAt: number }>;
 }
 
 interface SlotStats {
@@ -96,6 +95,8 @@ interface PhaseTotals {
   compile: number;
   score: number;
 }
+
+const GOLDEN_RATIO_U32 = 0x9e3779b1;
 
 export class SlotOrchestrator {
   #opts: SlotOrchestratorOptions;
@@ -272,7 +273,6 @@ export class SlotOrchestrator {
     focusRegions: readonly FocusRegionConstraint[],
     avoidRegions: readonly AvoidRegionConstraint[],
   ): void {
-    this.#opts = { ...this.#opts, focusRegions, avoidRegions };
     for (const slot of this.#slots) {
       slot.worker.postMessage({
         kind: 'focus-updated',
@@ -292,10 +292,6 @@ export class SlotOrchestrator {
       slot.worker.postMessage({ kind: 'rules-updated', enabledRuleIds: enabled, ruleWeights: weights });
     }
   }
-
-  // ---------------------------------------------------------------------
-  // Internals
-  // ---------------------------------------------------------------------
 
   #spawnWorkers(): void {
     // Resolve the slot-worker entry two ways:
@@ -317,7 +313,6 @@ export class SlotOrchestrator {
         id: slotId,
         worker,
         pending: 0,
-        inflight: new Map(),
         ready: this.#initWorker(worker, slotId),
       };
       worker.onmessage = (ev: MessageEvent<WorkerOutbound>) => this.#onMessage(slot, ev.data);
@@ -378,7 +373,9 @@ export class SlotOrchestrator {
 
   #deriveSeed(slotId: number): number {
     // Deterministic: same base seed + slotId → same worker seed.
-    return (this.#opts.seed ^ (slotId * 0x9e3779b1)) >>> 0;
+    // Multiplier is the 32-bit golden-ratio constant — well-distributed
+    // multiplicative hash mixer.
+    return (this.#opts.seed ^ (slotId * GOLDEN_RATIO_U32)) >>> 0;
   }
 
   async #runLoop(): Promise<void> {
@@ -408,14 +405,17 @@ export class SlotOrchestrator {
     }
     const prefetch = this.#opts.prefetchDepth ?? 2;
     let postedAny = false;
+    // Pool selection is invalid when the pool has no active targets. Checking
+    // once up-front avoids reallocating the active-targets list on every job
+    // we post. If a target gets disabled mid-fill, the resulting `select()`
+    // would still return *something* — the candidateFilter / worker side
+    // sorts it out.
+    if (this.#opts.pool.getActiveTargets().length === 0) {
+      return postedAny;
+    }
     for (const slot of this.#slots) {
       while (slot.pending < prefetch) {
         if (this.#shouldStop()) {
-          return postedAny;
-        }
-
-        const activeTargets = this.#opts.pool.getActiveTargets();
-        if (activeTargets.length === 0) {
           return postedAny;
         }
 
@@ -425,13 +425,6 @@ export class SlotOrchestrator {
           continue;
         }
 
-        // Optional candidate filter — applied here so we don't waste a
-        // round-trip for mutations we know will be rejected upstream.
-        // Since the filter is main-only, we evaluate it on the source the
-        // worker would operate on; filtering happens after mutation in the
-        // worker, so we can't call the filter here. Leave filter handling to
-        // after the worker returns (applied on `mutatedSource`).
-
         const jobId = ++this.#nextJobId;
         const job: WorkerJob = {
           kind: 'job',
@@ -440,7 +433,6 @@ export class SlotOrchestrator {
           candidateSource: headCandidate.source,
           breakdown: headCandidate.breakdown,
         };
-        slot.inflight.set(jobId, { targetId: target.id, startedAt: Date.now() });
         slot.pending++;
         slot.worker.postMessage(job);
         postedAny = true;
@@ -492,11 +484,9 @@ export class SlotOrchestrator {
   #onMessage(slot: WorkerSlot, msg: WorkerOutbound): void {
     if (msg.kind === 'ready' || msg.kind === 'error') {
       if (msg.kind === 'error') {
-        // If the error is tied to an in-flight job, free the slot for it.
-        // Otherwise the prefetch budget leaks one entry per job-time error
-        // and the slot eventually stops accepting work.
+        // Free the slot if the error names a jobId — otherwise prefetch leaks
+        // one entry per job-time error and the slot stops accepting work.
         if (msg.jobId !== undefined) {
-          slot.inflight.delete(msg.jobId);
           slot.pending = Math.max(0, slot.pending - 1);
           this.#wakeRunLoop();
         }
@@ -507,7 +497,6 @@ export class SlotOrchestrator {
 
     // All remaining kinds are WorkerResult.
     const result = msg as WorkerResult;
-    slot.inflight.delete(result.jobId);
     slot.pending = Math.max(0, slot.pending - 1);
 
     if (!this.#shouldStop()) {

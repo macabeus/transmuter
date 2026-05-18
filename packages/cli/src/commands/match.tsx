@@ -10,13 +10,13 @@ import {
   type MutationSearchOptions,
   type SessionConfig,
   SessionStore,
+  defaultConcurrency,
   detectLanguage,
   ensureLanguageRegistered,
 } from '@transmuter/core';
 import fs from 'fs/promises';
 import { Box, Text, render, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import os from 'os';
 import path from 'path';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -407,7 +407,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           console.error(`Error: --concurrency must be a positive integer (got ${rawConcurrency}).`);
           process.exit(1);
         }
-        const concurrency = rawConcurrency ?? Math.min(os.cpus().length, 4);
+        const concurrency = rawConcurrency ?? defaultConcurrency();
         const maxCompiles = args.maxCompiles ?? transmuterConfig?.maxCompiles;
         const timeoutMs = args.timeout ?? transmuterConfig?.timeoutMs;
         const mutationDepth = args.depth ?? transmuterConfig?.mutationDepth;

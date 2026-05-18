@@ -11,6 +11,7 @@
 import type { SgNode } from '@ast-grep/napi';
 import { Compiler } from '~/compiler/compiler.js';
 import { parse } from '~/parser.js';
+import { getCFunctionName } from '~/rules/helpers.js';
 import { Scorer } from '~/scoring/scorer.js';
 import type { ReducerOptions, ReducerResult } from '~/types.js';
 
@@ -102,12 +103,7 @@ export class Reducer {
     const root = parse('c', source);
     const fnDefs = root.root().findAll({ rule: { kind: 'function_definition' } });
 
-    // Separate target from non-target functions
-    const nonTarget = fnDefs.filter((fn) => {
-      const declarator = fn.find({ rule: { kind: 'function_declarator' } });
-      const name = declarator?.find({ rule: { kind: 'identifier' } });
-      return name?.text() !== this.#opts.functionName;
-    });
+    const nonTarget = fnDefs.filter((fn) => getCFunctionName(fn) !== this.#opts.functionName);
 
     if (nonTarget.length === 0) {
       return [source, 0];
@@ -202,11 +198,7 @@ export class Reducer {
     const root = parse('c', source);
     const fnDefs = root.root().findAll({ rule: { kind: 'function_definition' } });
 
-    const nonTarget = fnDefs.filter((fn) => {
-      const declarator = fn.find({ rule: { kind: 'function_declarator' } });
-      const name = declarator?.find({ rule: { kind: 'identifier' } });
-      return name?.text() !== this.#opts.functionName;
-    });
+    const nonTarget = fnDefs.filter((fn) => getCFunctionName(fn) !== this.#opts.functionName);
 
     if (nonTarget.length === 0) {
       return [source, 0];
@@ -228,17 +220,12 @@ export class Reducer {
       const stubBody = returnType === 'void' ? '{}' : '{ return 0; }';
 
       // Re-parse to get fresh positions (source may have shifted from prior stubs)
+      const origName = getCFunctionName(fn);
       const freshRoot = parse('c', current);
       const freshFn = freshRoot
         .root()
         .findAll({ rule: { kind: 'function_definition' } })
-        .find((f) => {
-          const d = f.find({ rule: { kind: 'function_declarator' } });
-          const n = d?.find({ rule: { kind: 'identifier' } });
-          const origD = fn.find({ rule: { kind: 'function_declarator' } });
-          const origN = origD?.find({ rule: { kind: 'identifier' } });
-          return n?.text() === origN?.text();
-        });
+        .find((f) => getCFunctionName(f) === origName);
 
       if (!freshFn) {
         continue;

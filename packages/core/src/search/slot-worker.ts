@@ -42,10 +42,6 @@ import type {
   WorkerResult,
 } from './worker-protocol.js';
 
-// ---------------------------------------------------------------------------
-// Worker state (populated on init)
-// ---------------------------------------------------------------------------
-
 interface WorkerState {
   slotId: number;
   engine: MutationEngine;
@@ -60,10 +56,6 @@ interface WorkerState {
 }
 
 let state: WorkerState | null = null;
-
-// ---------------------------------------------------------------------------
-// Message handler
-// ---------------------------------------------------------------------------
 
 self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
   const msg = ev.data;
@@ -84,7 +76,7 @@ self.onmessage = async (ev: MessageEvent<WorkerInbound>) => {
         if (!state) {
           throw new Error('worker received rules-updated before init');
         }
-        applyRules(state, msg.enabledRuleIds, msg.ruleWeights);
+        applyRules(state.registry, msg.enabledRuleIds, msg.ruleWeights);
         return;
 
       case 'adaptive-snapshot':
@@ -143,23 +135,13 @@ self.onerror = (event: ErrorEvent) => {
   });
 };
 
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
-
 async function handleInit(msg: WorkerInit): Promise<void> {
   const t0 = performance.now();
   ensureLanguageRegistered(msg.language);
 
   const registry = new RuleRegistry();
   registry.registerAll(builtInRules);
-  applyRules(
-    // Provide a stub state for applyRules since full state isn't built yet.
-    // We only use registry inside applyRules; the rest of state is ignored.
-    { registry } as WorkerState,
-    msg.enabledRuleIds,
-    msg.ruleWeights,
-  );
+  applyRules(registry, msg.enabledRuleIds, msg.ruleWeights);
 
   const adaptive = new AdaptiveSelector({ windowSize: msg.adaptiveSelectorWindowSize });
   if (msg.adaptiveSnapshot.byteLength > 0) {
@@ -329,20 +311,20 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   post(result);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function applyRules(s: WorkerState, enabled: readonly string[], weights: Readonly<Record<string, number>>): void {
+function applyRules(
+  registry: RuleRegistry,
+  enabled: readonly string[],
+  weights: Readonly<Record<string, number>>,
+): void {
   const enabledSet = new Set(enabled);
-  for (const rule of s.registry.all()) {
+  for (const rule of registry.all()) {
     if (enabledSet.has(rule.id)) {
-      s.registry.enable(rule.id);
+      registry.enable(rule.id);
     } else {
-      s.registry.disable(rule.id);
+      registry.disable(rule.id);
     }
   }
-  s.registry.setWeights({ ...weights });
+  registry.setWeights({ ...weights });
 }
 
 function post(msg: WorkerOutbound): void {
