@@ -974,8 +974,7 @@ export class Refiner {
         resolvedByPrior++;
         emit({ type: 'merge-step', step, violationId: violation.id, action: 'skipped-already-resolved' });
 
-        const vr = this.#store.toJSON().violations.find((v) => v.id === violation.id);
-        if (vr) {
+        if (this.#store.hasViolation(violation.id)) {
           // Update status in store — resolved by a prior fix, so currentBase is the fixed source
           this.#store.push({
             type: 'violation-trivially-fixed',
@@ -1053,6 +1052,13 @@ export class Refiner {
         maxCompiles: maxCompilesPerViolation,
         timeoutMs: timeoutPerViolation,
         seed: rng.int(0, 0xffffffff),
+        // Same exploration knobs as Phase 1 — see the Phase 1 sub-search for
+        // rationale. Without `lateralForkBudget`, multi-step rewrites stall
+        // on score plateaus; without `maxUnproductiveResults` the merge can
+        // burn the full `maxCompiles` even when `candidateFilter` rejects
+        // every mutation.
+        lateralForkBudget: 10,
+        maxUnproductiveResults: 100_000,
         disabledRules: guideline.disabledRules,
         diffSettings: this.#opts.diffSettings,
         signal: this.#abortController.signal,

@@ -33,6 +33,8 @@ export interface IsolateResult {
   bodiesStripped: number;
 }
 
+const INLINE_SPECIFIERS = new Set(['inline', '__inline', '__inline__']);
+
 /**
  * Isolate `functionName` in `source`.
  *
@@ -61,12 +63,14 @@ export function isolateFunction(source: string, functionName: string): IsolateRe
       continue;
     }
 
-    // `inline` anywhere in the specifiers (text before the body) means the
-    // compiler may inline this into the target — we must keep the full body.
-    const fnStart = fn.range().start.index;
-    const bodyStart = body.range().start.index;
-    const specifiers = source.slice(fnStart, bodyStart);
-    if (/\binline\b|\b__inline\b|\b__inline__\b/.test(specifiers)) {
+    // `inline` (or `__inline` / `__inline__`) on this function means the
+    // compiler may inline it into the target — we must keep the full body.
+    // Check the AST directly so a stray `/* not inline */` comment between
+    // the declarator and body isn't picked up by a textual scan.
+    const isInline = fn
+      .children()
+      .some((c) => c.kind() === 'storage_class_specifier' && INLINE_SPECIFIERS.has(c.text()));
+    if (isInline) {
       continue;
     }
 

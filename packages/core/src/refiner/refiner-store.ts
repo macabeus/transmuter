@@ -130,6 +130,10 @@ export class RefinementStore {
     this.#violations = violations;
   }
 
+  hasViolation(violationId: string): boolean {
+    return this.#violations.some((v) => v.id === violationId);
+  }
+
   push(event: RefinerEvent): void {
     switch (event.type) {
       case 'violation-fix-started': {
