@@ -125,4 +125,25 @@ void after(void) {}
       'int target(int x) {\n    const char *s = "\\"}";\n    return x;\n}',
     );
   });
+
+  it('ignores a fake definition inside a doc comment before the real one', () => {
+    const source = `
+/**
+ * Example call:
+ *   target(int a) {
+ *     return a;
+ *   }
+ */
+int target(int x) { return x + 1; }
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe('int target(int x) { return x + 1; }');
+  });
+
+  it('ignores a fake definition inside a string literal before the real one', () => {
+    const source = `
+const char *help = "target(int a) { return a; }";
+int target(int x) { return x + 1; }
+`;
+    expect(extractFunctionDefinition(source, 'target')).toBe('int target(int x) { return x + 1; }');
+  });
 });

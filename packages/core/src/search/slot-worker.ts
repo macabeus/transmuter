@@ -255,27 +255,34 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   const tScore0 = performance.now();
   let scored: Awaited<ReturnType<typeof s.scorer.scoreWithAssembly>>;
   let scoreMs: number;
+  let scoreError: string | null = null;
   // try/finally guarantees Compiler.cleanup runs even if scoreWithAssembly
   // throws — without this, every scorer crash leaks the .o until the
   // worker shuts down and wipes the whole tmp dir.
   try {
     scored = await s.scorer.scoreWithAssembly(compileResult.objPath);
+  } catch (err) {
+    scored = null;
+    scoreError = err instanceof Error ? (err.stack ?? err.message) : String(err);
   } finally {
     scoreMs = performance.now() - tScore0;
     await Compiler.cleanup(compileResult.objPath);
   }
 
   if (!scored) {
-    // Compile actually succeeded; the scorer just couldn't find the symbol
-    // (e.g. compiler optimised it away). Report it as 'scorer-failed' —
-    // the orchestrator must not blame the rule's compile-error stats or
-    // call recordFailure on the target. Distinct from 'compile-error'.
+    // Compile actually succeeded; scoring either threw or couldn't find the
+    // symbol (e.g. compiler optimised it away). Either way, report it as
+    // 'scorer-failed' — the orchestrator must not blame the rule's
+    // compile-error stats or call recordFailure on the target. Distinct
+    // from 'compile-error'. Reporting here also ensures the attempt counts
+    // toward `maxCompiles` instead of leaking through the catch-all error
+    // path below as an uncounted worker error.
     post({
       kind: 'scorer-failed',
       jobId: job.jobId,
       mutationTargetId: job.mutationTargetId,
       ruleId,
-      error: 'scorer returned null (function symbol not found)',
+      error: scoreError ?? 'scorer returned null (function symbol not found)',
       timings: {
         mutate: mutateMs,
         parse: parseMs,

@@ -71,21 +71,24 @@ function makeHarness(): Harness {
         resolve(existing);
         return;
       }
-      const start = performance.now();
       const previous = worker.onmessage;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        worker.onmessage = previous;
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+      };
       const handler = (ev: MessageEvent<WorkerOutbound>) => {
         previous?.call(worker, ev);
         if (predicate(ev.data)) {
-          worker.onmessage = previous;
+          cleanup();
           resolve(ev.data);
-        } else if (performance.now() - start > timeoutMs) {
-          worker.onmessage = previous;
-          reject(new Error(`timed out waiting for predicate after ${timeoutMs} ms`));
         }
       };
       worker.onmessage = handler;
-      setTimeout(() => {
-        worker.onmessage = previous;
+      timer = setTimeout(() => {
+        cleanup();
         reject(new Error(`timed out waiting for predicate after ${timeoutMs} ms`));
       }, timeoutMs);
     });
@@ -93,10 +96,12 @@ function makeHarness(): Harness {
 
   async function shutdown(): Promise<void> {
     send({ kind: 'shutdown' });
-    // Worker cleans up compiler subprocesses + tmp dir asynchronously; give it
-    // a beat before terminating so the cleanup finishes against the real fs.
+    // Match the production shutdown contract: unref the worker so vitest can
+    // exit even if the worker is still finalizing. `terminate()` is avoided
+    // because Bun can SIGILL the main process after the worker has spawned
+    // compile subprocesses or loaded objdiff-wasm.
     await new Promise((r) => setTimeout(r, 200));
-    worker.terminate();
+    worker.unref();
   }
 
   return { worker, events, send, waitFor, shutdown };

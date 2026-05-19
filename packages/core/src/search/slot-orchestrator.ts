@@ -12,6 +12,8 @@
  *
  * See BUN_WORKERS_PLAN.md §3 and §6 for the architecture.
  */
+import { existsSync } from 'fs';
+import { fileURLToPath } from 'url';
 import type { Language } from '~/language.js';
 import type { Pool } from '~/pipeline/pool.js';
 import type { AdaptiveSelector } from '~/rules/adaptive-selector.js';
@@ -301,11 +303,17 @@ export class SlotOrchestrator {
     //    while slot-worker is emitted separately as `dist/search/slot-worker.js`.
     //    The package.json `./slot-worker` export handles that case via
     //    `import.meta.resolve`.
+    // We prefer the sibling URL when the file actually exists on disk;
+    // `import.meta.resolve` returns a URL without verifying existence, so
+    // checking the sibling first prevents resolving to a stale/missing dist
+    // when running unbuilt sources.
     let workerUrl: URL;
-    try {
+    const siblingUrl = new URL('./slot-worker.js', import.meta.url);
+    const siblingPath = fileURLToPath(siblingUrl).replace(/\.js$/, '.ts');
+    if (existsSync(fileURLToPath(siblingUrl)) || existsSync(siblingPath)) {
+      workerUrl = siblingUrl;
+    } else {
       workerUrl = new URL(import.meta.resolve('@transmuter/core/slot-worker'));
-    } catch {
-      workerUrl = new URL('./slot-worker.js', import.meta.url);
     }
     for (let slotId = 0; slotId < this.#opts.concurrency; slotId++) {
       const worker = new Worker(workerUrl);
@@ -349,25 +357,34 @@ export class SlotOrchestrator {
       compiler: { command: this.#opts.compilerCommand, cwd: this.#opts.compilerCwd },
       scorer: { targetObjectPath: this.#opts.targetObjectPath, diffSettings: this.#opts.diffSettings },
     };
-    worker.postMessage(init);
-
     return new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        worker.removeEventListener('message', handler);
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+      };
       const handler = (ev: MessageEvent<WorkerOutbound>) => {
         const msg = ev.data;
         if (msg.kind === 'ready' && msg.slotId === slotId) {
-          worker.removeEventListener('message', handler);
+          cleanup();
           resolve();
         } else if (msg.kind === 'error' && msg.fatal) {
-          worker.removeEventListener('message', handler);
+          cleanup();
           reject(new Error(`worker ${slotId} fatal init error: ${msg.error}`));
         }
       };
+      // Register the listener BEFORE posting init so we don't miss a fatal
+      // error fired synchronously during worker bootstrap.
       worker.addEventListener('message', handler);
       // Fallback so a silent worker doesn't hang the whole pool forever.
-      setTimeout(() => {
-        worker.removeEventListener('message', handler);
+      timer = setTimeout(() => {
+        cleanup();
         reject(new Error(`worker ${slotId} did not become ready in 30s`));
       }, 30_000);
+
+      worker.postMessage(init);
     });
   }
 
@@ -561,13 +578,16 @@ export class SlotOrchestrator {
         return;
       }
       case 'scored': {
+        // The compile and score both ran in the worker, so this attempt
+        // counts against `maxCompiles` regardless of whether the main-side
+        // candidate filter accepts the result.
+        this.#slotStats.compiled++;
+
         // Main-side candidate filter (applied to the mutated source since we
         // couldn't evaluate it before dispatching the job).
         if (this.#opts.candidateFilter && !this.#opts.candidateFilter(result.mutatedSource)) {
           return;
         }
-
-        this.#slotStats.compiled++;
 
         const asmResult: AssemblyScoreResult = {
           score: result.score,

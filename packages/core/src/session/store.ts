@@ -216,6 +216,15 @@ export class SessionStore {
         this.#bumpTargetAttempt(event.mutationTargetId);
         break;
 
+      case 'scorer-failed':
+        // Compile succeeded; scoring failed. Count it as an error so the
+        // report's totalErrors / per-rule errors reflect the failed attempt,
+        // and bump the target's attempt counter (same as compilation-error).
+        this.#totalErrors++;
+        this.#ensureRuleStats(event.ruleId).errors++;
+        this.#bumpTargetAttempt(event.mutationTargetId);
+        break;
+
       case 'mutation-target-created':
         this.#targets.set(event.mutationTargetId, {
           id: event.mutationTargetId,

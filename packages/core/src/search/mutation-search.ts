@@ -296,6 +296,17 @@ export class MutationSearch {
         const hypScore = this.#opts.scoreTransform
           ? this.#opts.scoreTransform(constraint.source, hypResult)
           : hypRawScore;
+        // Refiner sub-searches set a `candidateFilter` that rejects sources
+        // which still contain the violation. Apply it here too so a
+        // hypothesis that still contains the violation can't be reported
+        // as a fixed-by-hypothesis match. Treat a filter-rejected
+        // hypothesis the same as a compile/score failure (score = -1) so
+        // it neither injects nor declares a perfect match.
+        const passesFilter = !this.#opts.candidateFilter || this.#opts.candidateFilter(constraint.source);
+        if (!passesFilter) {
+          emit({ type: 'hypothesis-scored', constraintId: constraint.id, score: -1 });
+          continue;
+        }
         const injectAsBranch = constraint.injectAsBranch ?? true;
         let mutationTargetId: string | undefined;
         if (injectAsBranch) {
@@ -312,6 +323,10 @@ export class MutationSearch {
             candidateId: target.candidateId,
             score: hypScore,
             origin: 'external',
+            // Preserve the hypothesis source on the event so SessionStore
+            // records the candidate's actual source instead of falling
+            // back to the original (pre-hypothesis) source.
+            source: constraint.source,
             assembly: hypResult.assembly,
             assemblyDiff: hypResult.assemblyDiff,
             breakdown: hypResult.breakdown,

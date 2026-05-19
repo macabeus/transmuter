@@ -2,7 +2,10 @@ import React from 'react';
 
 import type { RefinementReport } from '../types';
 
-function formatDuration(ms: number): string {
+function formatDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !isFinite(ms)) {
+    return '∞';
+  }
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   const h = Math.floor(m / 60);
@@ -13,6 +16,13 @@ function formatDuration(ms: number): string {
     return `${m}m ${s % 60}s`;
   }
   return `${s}s`;
+}
+
+function formatNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined || !isFinite(n)) {
+    return '∞';
+  }
+  return n.toLocaleString();
 }
 
 export function RefinementSummary({ report }: { report: RefinementReport }): React.ReactElement {
@@ -50,7 +60,7 @@ export function RefinementSummary({ report }: { report: RefinementReport }): Rea
           <ConfigItem label="Guideline" value={config.guidelineId} />
           {config.profile && <ConfigItem label="Profile" value={config.profile} />}
           <ConfigItem label="Concurrency" value={String(config.concurrency)} />
-          <ConfigItem label="Max compiles/violation" value={config.maxCompilesPerViolation.toLocaleString()} />
+          <ConfigItem label="Max compiles/violation" value={formatNumber(config.maxCompilesPerViolation)} />
           <ConfigItem label="Timeout/violation" value={formatDuration(config.timeoutMsPerViolation)} />
           <ConfigItem label="Seed" value={String(config.seed)} />
         </div>

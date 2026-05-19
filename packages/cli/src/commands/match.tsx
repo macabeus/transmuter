@@ -380,6 +380,10 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         let workingSource = source;
         let contextSource: string | undefined;
         if (args.isolate ?? transmuterConfig?.isolate) {
+          if (language !== 'c') {
+            console.error(`Error: --isolate is only supported for C sources (got '${language}').`);
+            process.exit(1);
+          }
           const { isolateFunction } = await import('@transmuter/core');
           const result = isolateFunction(workingSource, fnName);
           contextSource = workingSource;

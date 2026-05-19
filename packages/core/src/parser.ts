@@ -100,9 +100,9 @@ export function parse(language: Language, source: string): SgRoot {
  * SgRoot is read-only for rules (they call `.root().find(...)` and never
  * mutate the AST), so sharing a parse across iterations is safe.
  *
- * The cache is keyed on the raw source string. V8 hashes string map keys on
- * content, not identity, so the same source produced by different code paths
- * (slot A vs slot B, candidate vs mutation result) still hits.
+ * The cache is keyed on the raw source string. JS `Map` hashes string keys by
+ * content (per the language spec), so the same source produced by different
+ * code paths (slot A vs slot B, candidate vs mutation result) still hits.
  */
 const PARSE_CACHE_MAX = 16;
 const parseCache = new Map<string, SgRoot>();

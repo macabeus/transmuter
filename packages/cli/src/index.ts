@@ -40,9 +40,9 @@ Match Options:
   --seed <n>           RNG seed for reproducibility (use with --concurrency 1
                        and --max-compiles for bit-identical runs)
   --no-reduce          Skip source reduction before permuting
-  --isolate            Strip non-target, non-inline function bodies and
-                       #defines before reduce/match — useful on preprocessed
-                       .ctx files where most of the source is irrelevant
+  --isolate            Replace non-target, non-inline function bodies with
+                       forward declarations before reduce/match — useful on
+                       preprocessed .ctx files. C only; macros are preserved.
   --depth <n>          Mutations per iteration (default: 1)
   --no-cleanup         Skip cleanup after finding a match
   --config <path>      Path to decomp.yaml

@@ -22,8 +22,6 @@ Main features:
 >
 > [Learn more by watching my talk.](https://www.youtube.com/watch?v=sF_Yk0udbZw)
 
-## How to use
-
 ## Setup
 
 1. Add this repository as a submodule on your decomp project
@@ -39,10 +37,8 @@ cat > setup-transmuter.sh <<'EOF'
 #!/bin/bash
 set -e
 
-if [ ! -d tools/transmuter ]; then
-  echo "Initializing tools/transmuter submodule..."
-  git submodule update --init tools/transmuter
-fi
+echo "Initializing tools/transmuter submodule..."
+git submodule update --init tools/transmuter
 
 if ! command -v bun &> /dev/null; then
   echo "[tools/transmuter] bun not found, installing..."
@@ -184,7 +180,7 @@ transmuter match base.pas \
 | `--seed <n>`              | RNG seed for reproducible runs                                                                                      |
 | `--depth <n>`             | Mutations to chain per iteration (default: 1)                                                                       |
 | `--no-reduce`             | Skip source reduction before permuting                                                                              |
-| `--isolate`               | Strip non-target, non-inline function bodies + `#define`s before reduce/match — useful on preprocessed `.ctx` files |
+| `--isolate`               | Replace non-target, non-inline function bodies with forward declarations before reduce/match — useful on preprocessed `.ctx` files (macros are preserved) |
 | `--no-cleanup`            | Skip cleanup after finding a match (do not remove temp vars, unnecessary casts)                                     |
 | `--config <path>`         | Explicit path to `decomp.yaml`                                                                                      |
 | `--version <name>`        | Version name for multi-version projects (selects the matching `versions[]` entry in `decomp.yaml`)                  |
