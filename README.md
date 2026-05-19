@@ -32,11 +32,17 @@ Main features:
 git submodule add https://github.com/macabeus/transmuter.git tools/transmuter
 ```
 
-2. Build Transmuter. Transmuter runs on [Bun](https://bun.com) and uses `pnpm` as its workspace manager. It's recommended to write a shell script to handle setup and push it into your repository:
+2. Build Transmuter. Transmuter runs on [Bun](https://bun.com) and uses `pnpm` as its workspace manager. Drop the script below into a `setup-transmuter.sh` at your repo root, then run it. Re-run it any time you bump the submodule.
 
 ```bash
-echo "Initializing tools submodules..."
-git submodule update --init
+cat > setup-transmuter.sh <<'EOF'
+#!/bin/bash
+set -e
+
+if [ ! -d tools/transmuter ]; then
+  echo "Initializing tools/transmuter submodule..."
+  git submodule update --init tools/transmuter
+fi
 
 if ! command -v bun &> /dev/null; then
   echo "[tools/transmuter] bun not found, installing..."
@@ -50,13 +56,13 @@ if ! command -v pnpm &> /dev/null; then
 fi
 
 echo "[tools/transmuter] Installing dependencies..."
-cd tools/transmuter
-pnpm install
+(cd tools/transmuter && pnpm install)
 
 echo "[tools/transmuter] Building..."
-pnpm run build
-
-echo "[tools/transmuter] Done!"
+(cd tools/transmuter && pnpm run build)
+EOF
+chmod +x setup-transmuter.sh
+./setup-transmuter.sh
 ```
 
 3. Invoke Transmuter via `bun`. The build produces a CLI entry at `tools/transmuter/packages/cli/dist/index.js`; run it with:
