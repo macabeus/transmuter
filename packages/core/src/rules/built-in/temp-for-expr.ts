@@ -44,6 +44,7 @@ export const tempForExpr: Rule = {
       return null;
     }
 
+    const block = stmt.parent()!;
     const stmtRange = stmt.range();
     const indent = getIndentation(source, stmt);
 
@@ -51,20 +52,39 @@ export const tempForExpr: Rule = {
     const tempNum = rng.int(0, 999);
     const tempName = `_t${tempNum}`;
 
-    // Build the temp declaration
-    const tempDecl = `int ${tempName} = ${exprText};\n${indent}`;
+    // C89 — every retro profile here (agbcc, old-agbcc, ido, mips-gcc-272) — requires a
+    // block's declarations to precede all of its statements. Dropping `int _t = expr;` at
+    // an arbitrary statement position is C99, and those compilers reject it, so the temp
+    // has to land somewhere legal. Two cases, and both keep evaluation order exactly as it
+    // was (hoisting the INITIALISER to the top of the block instead would evaluate the
+    // expression early, which is a semantic change when it calls anything):
+    //
+    //   * a plain statement  → wrap it in a fresh block, whose top the declaration owns;
+    //   * a declaration      → insert directly before it, but only while every preceding
+    //                          sibling is also a declaration (wrapping is not an option
+    //                          there: it would scope the declared name out of the rest of
+    //                          the block and break every later use).
+    const isDecl = stmt.kind() === 'declaration';
+    if (isDecl) {
+      const siblings = block.children().filter((c) => c.kind() !== '{' && c.kind() !== '}' && c.kind() !== 'comment');
+      for (const sib of siblings) {
+        if (sib.range().start.index >= stmtRange.start.index) {
+          break;
+        }
+        if (sib.kind() !== 'declaration') {
+          return null;
+        }
+      }
+    }
 
-    // Insert declaration before the statement and replace the expression with the temp name
-    // We need to do both edits carefully: insert before statement, replace expression
-    // Since the expression is inside the statement, we handle insertion first
-    let result = source.slice(0, stmtRange.start.index) + tempDecl + source.slice(stmtRange.start.index);
-
-    // The insertion shifted the expression's position by the length of tempDecl
-    const shift = tempDecl.length;
-    const newExprStart = range.start.index + shift;
-    const newExprEnd = range.end.index + shift;
-
-    result = replaceRange(result, newExprStart, newExprEnd, tempName);
+    // Right to left, so earlier indices stay valid.
+    let result = replaceRange(source, range.start.index, range.end.index, tempName);
+    const opener = isDecl ? `int ${tempName} = ${exprText};\n${indent}` : `{\n${indent}    int ${tempName} = ${exprText};\n${indent}    `;
+    result = result.slice(0, stmtRange.start.index) + opener + result.slice(stmtRange.start.index);
+    if (!isDecl) {
+      const closeAt = stmtRange.end.index + opener.length;
+      result = result.slice(0, closeAt) + `\n${indent}}` + result.slice(closeAt);
+    }
 
     return {
       source: result,
