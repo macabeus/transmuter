@@ -5,7 +5,14 @@
  */
 import type { DiffType, MutationApplyResult } from '~/types.js';
 
-import { findAllByKind, findTargetFunction, getIndentation, isInsideAsm, replaceRange } from '../helpers.js';
+import {
+  findAllByKind,
+  findTargetFunction,
+  getIndentation,
+  getStatements,
+  isInsideAsm,
+  replaceRange,
+} from '../helpers.js';
 import type { MutationContext, Rule } from '../rule.js';
 
 export const tempForExpr: Rule = {
@@ -51,16 +58,44 @@ export const tempForExpr: Rule = {
     const tempNum = rng.int(0, 999);
     const tempName = `_t${tempNum}`;
 
-    // Build the temp declaration
-    const tempDecl = `int ${tempName} = ${exprText};\n${indent}`;
+    // Every compiler profile this tool ships (agbcc, old-agbcc, ido, mips-gcc-272) is C89, so a
+    // declaration may only appear at the top of a block. Dropping `int _t = …;` in front of an
+    // arbitrary statement produces source the compiler REJECTS, and a rejected candidate is not
+    // a mutation — it is a wasted slot, or worse, a phantom score where the pipeline keeps going.
+    //
+    // Two placements keep it legal, and both preserve evaluation order (hoisting the initialiser
+    // above intervening statements would not):
+    //
+    //   * before a `declaration`, but only while nothing except declarations precedes it — that
+    //     keeps the whole run inside the block's declaration prefix;
+    //   * otherwise wrap the statement in a block of its own, and declare the temp at ITS top.
+    const parent = stmt.parent()!;
+    const siblings = getStatements(parent);
+    const idx = siblings.findIndex((c) => c.range().start.index === stmtRange.start.index);
 
-    // Insert declaration before the statement and replace the expression with the temp name
-    // We need to do both edits carefully: insert before statement, replace expression
-    // Since the expression is inside the statement, we handle insertion first
-    let result = source.slice(0, stmtRange.start.index) + tempDecl + source.slice(stmtRange.start.index);
+    let result: string;
+    let shift: number;
 
-    // The insertion shifted the expression's position by the length of tempDecl
-    const shift = tempDecl.length;
+    if (stmt.kind() === 'declaration') {
+      if (idx < 0 || siblings.slice(0, idx).some((c) => c.kind() !== 'declaration')) {
+        return null;
+      }
+      const tempDecl = `int ${tempName} = ${exprText};\n${indent}`;
+      result = source.slice(0, stmtRange.start.index) + tempDecl + source.slice(stmtRange.start.index);
+      shift = tempDecl.length;
+    } else {
+      const inner = `${indent}    `;
+      const prefix = `{\n${inner}int ${tempName} = ${exprText};\n${inner}`;
+      // The statement's own text is copied VERBATIM. Re-indenting its continuation lines would
+      // read better and would also change its length, which moves the expression that is about
+      // to be replaced by offset — the edit below would then land on the wrong characters.
+      const stmtText = source.slice(stmtRange.start.index, stmtRange.end.index);
+      result =
+        source.slice(0, stmtRange.start.index) + prefix + stmtText + `\n${indent}}` + source.slice(stmtRange.end.index);
+      shift = prefix.length;
+    }
+
+    // The insertion shifted the expression's position by the length of what went before it
     const newExprStart = range.start.index + shift;
     const newExprEnd = range.end.index + shift;
 
