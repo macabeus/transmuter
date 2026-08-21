@@ -30,16 +30,16 @@ async function initObjdiff(): Promise<ObjdiffModule> {
 
 export class Scorer {
   #targetObjectPath: string;
-  #functionName: string;
+  #symbolName: string;
   #diffSettings: Record<string, string>;
 
   #objdiff: ObjdiffModule | null = null;
   #targetObj: ParsedObject | null = null;
   #diffConfig: DiffConfig | null = null;
 
-  constructor(targetObjectPath: string, functionName: string, diffSettings: Record<string, string> = {}) {
+  constructor(targetObjectPath: string, symbolName: string, diffSettings: Record<string, string> = {}) {
     this.#targetObjectPath = targetObjectPath;
-    this.#functionName = functionName;
+    this.#symbolName = symbolName;
     this.#diffSettings = diffSettings;
   }
 
@@ -123,7 +123,7 @@ export class Scorer {
     const objdiff = this.#objdiff!;
     const diffConfig = this.#diffConfig!;
 
-    const symbol = objDiff.findSymbol(this.#functionName, undefined);
+    const symbol = objDiff.findSymbol(this.#symbolName, undefined);
     if (!symbol) {
       return '';
     }
@@ -180,8 +180,8 @@ export class Scorer {
     const objdiff = this.#objdiff!;
     const diffConfig = this.#diffConfig!;
 
-    const leftSymbol = leftDiff.findSymbol(this.#functionName, undefined);
-    const rightSymbol = rightDiff.findSymbol(this.#functionName, undefined);
+    const leftSymbol = leftDiff.findSymbol(this.#symbolName, undefined);
+    const rightSymbol = rightDiff.findSymbol(this.#symbolName, undefined);
 
     if (!leftSymbol || !rightSymbol) {
       return null;
@@ -269,8 +269,8 @@ export class Scorer {
     const objdiff = this.#objdiff!;
     const diffConfig = this.#diffConfig!;
 
-    const leftSymbol = leftDiff.findSymbol(this.#functionName, undefined);
-    const rightSymbol = rightDiff.findSymbol(this.#functionName, undefined);
+    const leftSymbol = leftDiff.findSymbol(this.#symbolName, undefined);
+    const rightSymbol = rightDiff.findSymbol(this.#symbolName, undefined);
 
     if (!leftSymbol || !rightSymbol) {
       return null;

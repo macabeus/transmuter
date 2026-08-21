@@ -298,6 +298,14 @@ export interface MutationSearchOptions {
   language?: Language;
   /** Name of the target function in the source */
   functionName: string;
+  /**
+   * Name of the symbol in the target object file, when it differs from
+   * `functionName`. C++ compilers mangle names, so a method written as
+   * `getSlotResult` may be emitted as `getSlotResult__11TTelesaSlotFv`.
+   * Defaults to `functionName`, which is correct for C and for
+   * `extern "C"` functions.
+   */
+  symbolName?: string;
   /** Path to the target object file (.o) */
   targetObjectPath: string;
   /**
@@ -467,6 +475,8 @@ export interface ReducerOptions {
   source: string;
   /** Target function name */
   functionName: string;
+  /** Symbol name in the object file, if it differs (e.g. C++ mangling) */
+  symbolName?: string;
   /** Path to the target object file */
   targetObjectPath: string;
   /** Compiler command template */
@@ -580,6 +590,8 @@ export interface SessionMetadata {
 
 export interface SessionConfig {
   readonly functionName: string;
+  /** Symbol name in the object file, if it differed from functionName */
+  readonly symbolName?: string;
   readonly targetObjectPath: string;
   readonly compilerCommand: string;
   readonly language: Language;
@@ -685,6 +697,8 @@ export interface RefinementReport {
 
 export interface RefinementConfig {
   readonly functionName: string;
+  /** Symbol name in the object file, if it differed from functionName */
+  readonly symbolName?: string;
   readonly targetObjectPath: string;
   readonly compilerCommand: string;
   readonly language: Language;
@@ -809,6 +823,8 @@ export interface RefinerOptions {
   language?: Language;
   /** Target function name */
   functionName: string;
+  /** Symbol name in the object file, if it differs (e.g. C++ mangling) */
+  symbolName?: string;
   /** Path to the target object file (.o) */
   targetObjectPath: string;
   /** Shell command template for compilation */

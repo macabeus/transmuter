@@ -137,7 +137,7 @@ export class Objdiff {
   async getDifferences(
     leftDiff: ObjectDiff,
     rightDiff: ObjectDiff,
-    functionName: string,
+    symbolName: string,
   ): Promise<{
     differenceCount: number;
     matchingCount: number;
@@ -153,7 +153,7 @@ export class Objdiff {
 
     for await (const [leftInstructionRow, rightInstructionRow] of this.#iterateSymbolRows(
       [leftDiff, rightDiff],
-      functionName,
+      symbolName,
       diffConfig,
     )) {
       let leftInstruction = '';

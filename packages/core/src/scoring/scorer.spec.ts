@@ -98,6 +98,21 @@ describe('Scorer', () => {
       await scorer.init();
       expect(await scorer.score(renamedPath)).toBeNull();
     });
+
+    it('resolves by the symbol name it was given, not the source function name', async () => {
+      // Scorer keys off the object-file symbol, which is what makes C++
+      // support possible: a method written as `getSlotResult` in the source
+      // may be emitted as `getSlotResult__11TTelesaSlotFv`, so callers pass
+      // MutationSearchOptions.symbolName here while the mutation engine keeps
+      // using functionName for its AST lookup.
+      //
+      // `renamed` holds the same body as `add_one` under the symbol
+      // `something_else`, so scoring it against itself by that symbol is a
+      // perfect match, even though no source-level `add_one` is involved.
+      const scorer = new Scorer(renamedPath, 'something_else', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      expect(await scorer.score(renamedPath)).toBe(0);
+    });
   });
 
   // ---------------------------------------------------------------------------

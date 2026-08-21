@@ -421,7 +421,11 @@ export class Refiner {
     this.#store.setConfig(config);
 
     // 1. Sanity check — verify the source already matches
-    const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+    const scorer = new Scorer(
+      this.#opts.targetObjectPath,
+      this.#opts.symbolName ?? this.#opts.functionName,
+      this.#opts.diffSettings,
+    );
     await scorer.init();
 
     const compiler = new Compiler({
@@ -682,7 +686,11 @@ export class Refiner {
     }
 
     // Score the cleaned source
-    const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+    const scorer = new Scorer(
+      this.#opts.targetObjectPath,
+      this.#opts.symbolName ?? this.#opts.functionName,
+      this.#opts.diffSettings,
+    );
     await scorer.init();
 
     const compiler = new Compiler({
@@ -1104,7 +1112,11 @@ export class Refiner {
         return null;
       }
 
-      const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+      const scorer = new Scorer(
+        this.#opts.targetObjectPath,
+        this.#opts.symbolName ?? this.#opts.functionName,
+        this.#opts.diffSettings,
+      );
       await scorer.init();
       const score = await scorer.score(result.objPath);
       await Compiler.cleanup(result.objPath);

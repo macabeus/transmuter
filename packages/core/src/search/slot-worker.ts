@@ -161,7 +161,7 @@ async function handleInit(msg: WorkerInit): Promise<void> {
     sourcePrefix: msg.sourcePrefix,
   });
 
-  const scorer = new Scorer(msg.scorer.targetObjectPath, msg.functionName, { ...msg.scorer.diffSettings });
+  const scorer = new Scorer(msg.scorer.targetObjectPath, msg.symbolName, { ...msg.scorer.diffSettings });
   await scorer.init();
 
   const engine = new MutationEngine(registry, rng, {

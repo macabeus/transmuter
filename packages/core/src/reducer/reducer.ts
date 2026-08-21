@@ -29,7 +29,7 @@ export class Reducer {
       functionName: opts.functionName,
       sourcePrefix: opts.sourcePrefix,
     });
-    this.#scorer = new Scorer(opts.targetObjectPath, opts.functionName, opts.diffSettings);
+    this.#scorer = new Scorer(opts.targetObjectPath, opts.symbolName ?? opts.functionName, opts.diffSettings);
   }
 
   /** Run the full reduction pipeline. */

@@ -23,6 +23,8 @@ export interface CanonicalizerOptions {
   source: string;
   language: Language;
   functionName: string;
+  /** Symbol name in the object file, if it differs (e.g. C++ mangling) */
+  symbolName?: string;
   targetObjectPath: string;
   compilerCommand: string;
   cwd: string;
@@ -60,7 +62,7 @@ export class Canonicalizer {
       signal: opts.signal,
       sourcePrefix: opts.sourcePrefix,
     });
-    this.#scorer = new Scorer(opts.targetObjectPath, opts.functionName, opts.diffSettings);
+    this.#scorer = new Scorer(opts.targetObjectPath, opts.symbolName ?? opts.functionName, opts.diffSettings);
   }
 
   async run(): Promise<CanonicalizerResult> {
