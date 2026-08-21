@@ -37,6 +37,7 @@ export interface SlotOrchestratorOptions {
   seed: number;
   language: Language;
   functionName: string;
+  symbolName: string;
   mutationDepth: number;
   sourcePrefix: string;
   focusRegions: readonly FocusRegionConstraint[];
@@ -346,6 +347,7 @@ export class SlotOrchestrator {
       seed: this.#deriveSeed(slotId),
       language: this.#opts.language,
       functionName: this.#opts.functionName,
+      symbolName: this.#opts.symbolName,
       mutationDepth: this.#mutationDepth,
       sourcePrefix: this.#opts.sourcePrefix,
       enabledRuleIds: enabled,

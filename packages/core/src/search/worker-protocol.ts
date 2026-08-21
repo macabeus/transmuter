@@ -15,6 +15,8 @@ export interface WorkerInit {
   readonly seed: number;
   readonly language: Language;
   readonly functionName: string;
+  /** Symbol to score against in the object file (already resolved; equals functionName for C) */
+  readonly symbolName: string;
   readonly mutationDepth: number;
   readonly sourcePrefix: string;
   readonly enabledRuleIds: readonly string[];

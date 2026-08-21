@@ -37,6 +37,8 @@ export interface CleanupOptions {
   language?: Language;
   /** Target function name */
   functionName: string;
+  /** Symbol name in the object file, if it differs (e.g. C++ mangling) */
+  symbolName?: string;
   /** Path to the target object file (.o) */
   targetObjectPath: string;
   /** Shell command template for compilation */

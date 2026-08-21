@@ -30,6 +30,7 @@ export interface RefineArgs {
   sourceFile: string;
   target?: string;
   function?: string;
+  symbol?: string;
   compiler?: string;
   cwd?: string;
   profile?: string;
@@ -217,6 +218,9 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
 
   const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
   const fnName = args.function ?? '';
+  // C++ symbols are mangled, so the object symbol may differ from the
+  // source-level name the mutation engine looks up in the AST.
+  const symName = args.symbol ?? fnName;
   const targetPath = args.target;
 
   // Verify the source matches (optional — just for the listing)
@@ -231,7 +235,7 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
       });
       const compileResult = await compiler.compile(source);
       if (compileResult.success) {
-        const scorer = new Scorer(targetPath, fnName, transmuterConfig?.diffSettings);
+        const scorer = new Scorer(targetPath, symName, transmuterConfig?.diffSettings);
         await scorer.init();
         const score = await scorer.score(compileResult.objPath);
         await Compiler.cleanup(compileResult.objPath);
@@ -594,6 +598,9 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
         }
 
         const fnName = args.function ?? '';
+        // C++ symbols are mangled, so the object symbol may differ from the
+        // source-level name the mutation engine looks up in the AST.
+        const symName = args.symbol ?? fnName;
         if (!fnName) {
           setState((s) => ({ ...s, error: 'No function name. Provide --function.' }));
           onComplete(3);
@@ -622,6 +629,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
           source,
           language,
           functionName: fnName,
+          symbolName: symName,
           targetObjectPath: targetPath,
           compilerCommand,
           cwd: args.cwd ?? process.cwd(),
@@ -675,6 +683,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
             source: result.source,
             language,
             functionName: fnName,
+            symbolName: symName,
             targetObjectPath: targetPath,
             compilerCommand,
             cwd: args.cwd ?? process.cwd(),

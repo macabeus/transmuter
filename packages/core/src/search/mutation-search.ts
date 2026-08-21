@@ -151,7 +151,11 @@ export class MutationSearch {
     try {
       ensureLanguageRegistered(this.#language);
 
-      const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+      const scorer = new Scorer(
+        this.#opts.targetObjectPath,
+        this.#opts.symbolName ?? this.#opts.functionName,
+        this.#opts.diffSettings,
+      );
       compiler = new Compiler({
         command: this.#opts.compilerCommand,
         cwd: this.#opts.cwd,
@@ -368,6 +372,7 @@ export class MutationSearch {
         seed: this.#opts.seed ?? Math.floor(Math.random() * 0xffffffff),
         language: this.#language,
         functionName: this.#opts.functionName,
+        symbolName: this.#opts.symbolName ?? this.#opts.functionName,
         mutationDepth: this.#opts.mutationDepth ?? 1,
         sourcePrefix: this.#opts.sourcePrefix ?? '',
         focusRegions: this.#focusRegions,
@@ -475,7 +480,11 @@ export class MutationSearch {
       return null;
     }
 
-    const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+    const scorer = new Scorer(
+      this.#opts.targetObjectPath,
+      this.#opts.symbolName ?? this.#opts.functionName,
+      this.#opts.diffSettings,
+    );
     await scorer.init();
     const scoreResult = await scorer.scoreWithAssembly(compileResult.objPath);
     await Compiler.cleanup(compileResult.objPath);
@@ -570,16 +579,19 @@ export class MutationSearch {
         return null;
       }
 
-      const assembly = await objdiff.getAssemblyFromSymbol(diffResult.left, this.#opts.functionName);
-      const targetAssembly = await objdiff.getAssemblyFromSymbol(diffResult.right, this.#opts.functionName);
+      // These resolve symbols in the object file, so they take the (possibly
+      // mangled) symbol name rather than the source-level function name.
+      const symbolName = this.#opts.symbolName ?? this.#opts.functionName;
+      const assembly = await objdiff.getAssemblyFromSymbol(diffResult.left, symbolName);
+      const targetAssembly = await objdiff.getAssemblyFromSymbol(diffResult.right, symbolName);
       const { differenceCount, matchingCount, differences, structuredDifferences } = await objdiff.getDifferences(
         diffResult.left,
         diffResult.right,
-        this.#opts.functionName,
+        symbolName,
       );
 
       // Also produce the side-by-side diff via Scorer for backward compat
-      const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
+      const scorer = new Scorer(this.#opts.targetObjectPath, symbolName, this.#opts.diffSettings);
       await scorer.init();
       const sideBySide = await scorer.assemblyDiff(compileResult.objPath);
 

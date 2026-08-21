@@ -159,6 +159,13 @@ transmuter match base.cpp \
   --target target.o \
   --function MyClass::update
 
+# C++ where the object symbol is mangled: --function is looked up in
+# the source, --symbol is looked up in the object file.
+transmuter match base.cpp \
+  --target target.o \
+  --function getSlotResult \
+  --symbol getSlotResult__11TTelesaSlotFv
+
 # Pascal source (language detected from .pas extension)
 transmuter match base.pas \
   --target target.o \
@@ -171,6 +178,7 @@ transmuter match base.pas \
 |---------------------------|---------------------------------------------------------------------------------------------------------------------|
 | `--target <path>`         | Target object file (.o)                                                                                             |
 | `--function <name>`       | Function name to match                                                                                              |
+| `--symbol <name>`         | Symbol name in the target object when it differs from `--function` (C++ mangling). Defaults to `--function`.                     |
 | `--compiler <cmd>`        | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{functionName}}`)                                   |
 | `--cwd <path>`            | Working directory for the compiler                                                                                  |
 | `--profile <id>`          | Compiler profile: `agbcc`, `old-agbcc`, `ido`, `mips-gcc-272`                                                       |
@@ -214,6 +222,7 @@ transmuter refine base.c \
 |---------------------------|--------------------------------------------------------------------------------------------------------|
 | `--target <path>`         | Target object file (.o)                                                                                |
 | `--function <name>`       | Function name to match                                                                                 |
+| `--symbol <name>`         | Symbol name in the target object when it differs from `--function` (C++ mangling). Defaults to `--function`.                     |
 | `--compiler <cmd>`        | Compiler command template                                                                              |
 | `--guideline <id>`        | Guideline to apply (omit to list available)                                                            |
 | `--cwd <path>`            | Working directory for the compiler                                                                     |

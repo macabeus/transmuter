@@ -28,6 +28,7 @@ export interface MatchArgs {
   sourceFile: string;
   target?: string;
   function?: string;
+  symbol?: string;
   compiler?: string;
   cwd?: string;
   profile?: string;
@@ -348,6 +349,9 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         }
 
         const fnName = args.function ?? '';
+        // C++ symbols are mangled, so the object symbol may differ from the
+        // source-level name the mutation engine looks up in the AST.
+        const symName = args.symbol ?? fnName;
         if (!fnName) {
           setState((s) => ({
             ...s,
@@ -396,6 +400,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           const reducer = new Reducer({
             source: workingSource,
             functionName: fnName,
+            symbolName: symName,
             targetObjectPath: targetPath,
             compilerCommand,
             cwd: args.cwd ?? process.cwd(),
@@ -428,6 +433,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         }
         store.setConfig({
           functionName: fnName,
+          symbolName: symName,
           targetObjectPath: targetPath,
           compilerCommand,
           language,
@@ -447,6 +453,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           source: finalSource,
           language,
           functionName: fnName,
+          symbolName: symName,
           targetObjectPath: targetPath,
           compilerCommand,
           cwd: args.cwd ?? process.cwd(),
@@ -503,6 +510,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
             source: result.bestSource,
             language,
             functionName: fnName,
+            symbolName: symName,
             targetObjectPath: targetPath,
             compilerCommand,
             cwd: args.cwd ?? process.cwd(),

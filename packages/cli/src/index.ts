@@ -28,6 +28,8 @@ Commands:
 Match Options:
   --target <path>      Path to target object file (.o)
   --function <name>    Target function name
+  --symbol <name>      Symbol name in the target object, if it differs from
+                       --function (C++ mangling). Defaults to --function.
   --compiler <cmd>     Compiler command template
   --cwd <path>         Working directory for compiler
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
@@ -57,6 +59,8 @@ Match Options:
 Refine Options:
   --target <path>      Path to target object file (.o)
   --function <name>    Target function name
+  --symbol <name>      Symbol name in the target object, if it differs from
+                       --function (C++ mangling). Defaults to --function.
   --compiler <cmd>     Compiler command template
   --guideline <id>     Guideline to apply (omit to list available)
   --cwd <path>         Working directory for compiler
@@ -99,6 +103,7 @@ async function main(): Promise<void> {
         options: {
           target: { type: 'string' },
           function: { type: 'string' },
+          symbol: { type: 'string' },
           compiler: { type: 'string' },
           cwd: { type: 'string' },
           profile: { type: 'string' },
@@ -136,6 +141,7 @@ async function main(): Promise<void> {
         sourceFile: positionals[0],
         target: values.target,
         function: values.function,
+        symbol: values.symbol,
         compiler: values.compiler,
         cwd: values.cwd,
         profile: values.profile,
@@ -168,6 +174,7 @@ async function main(): Promise<void> {
         options: {
           target: { type: 'string' },
           function: { type: 'string' },
+          symbol: { type: 'string' },
           compiler: { type: 'string' },
           guideline: { type: 'string' },
           cwd: { type: 'string' },
@@ -199,6 +206,7 @@ async function main(): Promise<void> {
         sourceFile: positionals[0],
         target: values.target,
         function: values.function,
+        symbol: values.symbol,
         compiler: values.compiler,
         guideline: values.guideline,
         cwd: values.cwd,

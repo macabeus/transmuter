@@ -29,6 +29,7 @@ function makeInit(overrides: Partial<WorkerInit> = {}): WorkerInit {
     seed: 42,
     language: 'c',
     functionName: 'EntityItemDrop',
+    symbolName: 'EntityItemDrop',
     mutationDepth: 1,
     sourcePrefix,
     enabledRuleIds: builtInRules.map((r) => r.id),
