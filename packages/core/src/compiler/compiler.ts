@@ -1,7 +1,7 @@
 /**
  * Wraps a shell-based compiler command for use in the mutation pipeline.
  */
-import { closeSync, openSync } from 'fs';
+import { closeSync, existsSync, openSync } from 'fs';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -14,6 +14,48 @@ const LANG_EXT: Record<Language, string> = {
   cpp: '.cpp',
   pascal: '.pas',
 };
+
+/**
+ * Locate a POSIX shell to run compiler commands through.
+ *
+ * The command templates are written in `sh` syntax, so on Windows we look for
+ * a real `sh.exe` (Git for Windows / MSYS2) rather than falling back to cmd.
+ * Override with $TRANSMUTER_SHELL if it lives somewhere unusual.
+ */
+let cachedShell: string | undefined;
+function resolveShell(): string {
+  if (cachedShell !== undefined) {
+    return cachedShell;
+  }
+
+  const override = process.env.TRANSMUTER_SHELL;
+  if (override !== undefined && override !== '') {
+    cachedShell = override;
+    return cachedShell;
+  }
+
+  if (os.platform() === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\Git\\usr\\bin\\sh.exe',
+      'C:\\Program Files\\Git\\bin\\sh.exe',
+      'C:\\Program Files (x86)\\Git\\usr\\bin\\sh.exe',
+      'C:\\msys64\\usr\\bin\\sh.exe',
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) {
+        cachedShell = candidate;
+        return cachedShell;
+      }
+    }
+    throw new Error(
+      'No POSIX shell found. Install Git for Windows or set $TRANSMUTER_SHELL ' +
+        'to the absolute path of sh.exe.',
+    );
+  }
+
+  cachedShell = '/bin/sh';
+  return cachedShell;
+}
 
 export class Compiler {
   #command: string;
@@ -173,7 +215,7 @@ export class Compiler {
     // running.
     let proc: ReturnType<typeof Bun.spawn>;
     try {
-      proc = Bun.spawn(['/bin/sh', '-c', command], {
+      proc = Bun.spawn([resolveShell(), '-c', command], {
         cwd: this.#cwd,
         stdio: ['ignore', stdoutFd, stderrFd],
         detached: true,
