@@ -2,7 +2,7 @@
 
 **Current status: no live integration.** Mizuchi and Transmuter are independent projects. The two notable overlaps:
 
-1. **Scoring.** Transmuter scores through `@matchkit/scoring`; Mizuchi still has its own objdiff wrapper (`src/shared/objdiff.ts`), which Transmuter's former `Objdiff` class was ported from. Moving Mizuchi to `@matchkit/scoring` is the planned way to make the two score alike.
+1. **Scoring.** Both wrap `objdiff-wasm`: Transmuter through `@matchkit/scoring`, Mizuchi through its own `src/shared/objdiff.ts`. They can score the same pair differently — see [Scoring](#scoring).
 2. **Mizuchi currently wraps the Python `decomp-permuter`,** not Transmuter. `mizuchi/src/shared/decomp-permuter.ts` spawns the upstream Python process. `mizuchi/src/plugins/decomp-permuter/decomp-permuter-plugin.ts` is the Mizuchi plugin that consumes it. There is no `@transmuter/core` dependency in Mizuchi at the time of writing — `grep -r transmuter mizuchi/src` returns nothing.
 
 If the user is asking you to wire Mizuchi to Transmuter, this doc is a sketch of how the bridge would look — **not** a description of code that exists. Do not cite this as "already done."
@@ -27,7 +27,7 @@ Until someone writes the plugin, none of the above exists in code.
 
 ## Scoring
 
-Transmuter scores through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring). Mizuchi's `src/shared/objdiff.ts` is a separate wrapper, and it can score the same pair differently: it takes objdiff-wasm as a range (`^3.8.0`) and puts the candidate on objdiff's left side, where `@matchkit/scoring` puts the target. A Mizuchi–Transmuter bridge should score through `@matchkit/scoring` on both sides.
+Transmuter scores through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring). Mizuchi's `src/shared/objdiff.ts` takes objdiff-wasm as a range (`^3.8.0`) and puts the candidate on objdiff's left side, where `@matchkit/scoring` puts the target, so the two can score the same pair differently. A Mizuchi–Transmuter bridge should score through `@matchkit/scoring` on both sides.
 
 ## If you're told to "integrate Mizuchi with Transmuter"
 

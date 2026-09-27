@@ -210,9 +210,8 @@ describe('MutationSearch', () => {
   });
   describe('engine failure', () => {
     it('stops the search when the scoring engine fails, instead of failing every candidate', async () => {
-      // Every candidate after genesis is an object the engine panics on. Each panic is that
-      // candidate's `scorer-failed`, until the engine dies (a few thousand panics); from there the
-      // search must stop, not count one failure per candidate until maxCompiles.
+      // Every candidate after genesis makes the engine panic (one `scorer-failed` each) until,
+      // a few thousand panics in, the engine dies and the search must stop.
       const engineDir = new URL('../../../../test-fixture/engine-failure/', import.meta.url).pathname;
       const state = mkdtempSync(join(tmpdir(), 'transmuter-engine-failure-'));
       try {

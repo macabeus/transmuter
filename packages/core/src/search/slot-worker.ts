@@ -273,8 +273,8 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   }
 
   if (engineFailed) {
-    // Not this candidate's fault, and not recoverable: every later score in this worker would fail
-    // the same way. The orchestrator stops the search on this.
+    // The engine died; this candidate is not at fault. Report it apart from
+    // 'scorer-failed' so the orchestrator stops the search.
     post({
       kind: 'engine-failed',
       jobId: job.jobId,

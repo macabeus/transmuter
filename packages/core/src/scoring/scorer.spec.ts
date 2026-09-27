@@ -84,8 +84,8 @@ describe('Scorer', () => {
         ),
       ),
     );
-    // 0xe800 is the first half of a 32-bit Thumb-2 instruction, which ARMv4T has none of: objdiff
-    // shows it as `<illegal>` and diffs it against itself as `none`
+    // 0xe800 is half of a 32-bit Thumb-2 instruction, which ARMv4T lacks: objdiff shows it as
+    // `<illegal>` and diffs it against itself as `none`.
     undecodablePath = await assembleArmThumb(
       tempDir,
       'undecodable',
@@ -263,7 +263,6 @@ describe('Scorer', () => {
       const diff = await scorer.assemblyDiff(addOnePath);
 
       expect(diff).not.toBeNull();
-      // the target is objdiff's left side, and the left column
       expect(diff!.split('\n')[0]).toMatch(/^target\s+candidate$/);
       // The diff-kind marker — only present when a row actually differs.
       expect(diff!.includes('| ')).toBe(false);
@@ -311,7 +310,6 @@ describe('Scorer', () => {
       expect(report!.differenceCount).toBe(report!.structuredDifferences.length);
       const argDiff = report!.structuredDifferences.find((d) => d.type === 'argMismatch');
       expect(argDiff).toBeDefined();
-      // The immediate literally differs — "1" on the target side, "2" on the candidate's.
       expect(argDiff!.targetInstruction).toMatch(/0x1/);
       expect(argDiff!.candidateInstruction).toMatch(/0x2/);
       const joined = report!.differences.join('\n');
@@ -321,8 +319,7 @@ describe('Scorer', () => {
     });
 
     it('classifies a different-mnemonic change as replace', async () => {
-      // On ARMv4T, objdiff's alignment rules do NOT emit `op-mismatch` for a
-      // different-mnemonic diff — they fall through to `replace`.
+      // objdiff never emits `op-mismatch` on ARMv4T; see the scoreWithAssembly() test above.
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
       const report = await scorer.report(subOnePath);
@@ -333,7 +330,7 @@ describe('Scorer', () => {
 
     it('names an extra instruction by the side it is on: the CANDIDATE’s extra row is an insert', async () => {
       // The target is objdiff's left side and the candidate its right, as in
-      // objdiff's own UI: a row only the candidate has is inserted.
+      // objdiff's UI.
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
       const report = await scorer.report(addOneTwicePath);
@@ -352,16 +349,12 @@ describe('Scorer', () => {
     });
 
     it('detects absorbed instructions when the target symbol has size=0', async () => {
-      // Regression for the real ROM-extraction scenario: the target .o has a
-      // symbol with no `.size` directive, so it extends to the end of the
-      // section — covering instructions that "belong" to the next function.
-      // They must be reported as differences, never silently matched.
+      // The target's unsized `F` absorbs the next function's instructions;
+      // they must be reported as differences, never silently matched.
       const scorer = new Scorer(unsizedTargetPath, 'F', ARM_DIFF_SETTINGS);
       await scorer.init();
       const report = await scorer.report(boundedCandidatePath);
 
-      // The first two rows (add + bx) match exactly; the four trailing
-      // absorbed rows on the target side are reported as differences.
       expect(report!.matchingCount).toBe(2);
       expect(report!.differenceCount).toBe(4);
     });

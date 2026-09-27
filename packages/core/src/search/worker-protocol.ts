@@ -114,9 +114,9 @@ export type WorkerResult =
     }
   | {
       /**
-       * The objdiff engine itself failed (@matchkit/scoring's EngineFailedError): every later score
-       * in this worker would fail the same way, so the search must stop rather than count each
-       * candidate as a scorer failure.
+       * The scoring engine itself failed (`EngineFailedError`): every later
+       * score in this worker would fail the same way, so the orchestrator
+       * stops the search instead of counting each candidate as 'scorer-failed'.
        */
       readonly kind: 'engine-failed';
       readonly jobId: number;

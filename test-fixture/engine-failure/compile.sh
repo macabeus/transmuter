@@ -1,9 +1,8 @@
 #!/bin/sh
 # Usage: compile.sh <state dir> <inputPath> <outputPath>
 #
-# Ignores the source. The first compile (the search's genesis) gets candidate-diff.o, which scores;
-# every later one gets candidate-odd-size.o, whose last row the objdiff engine panics on. A few
-# thousand panics later the engine is dead, which is what engine-failure tests need.
+# Ignores the source. The first compile (genesis) gets candidate-diff.o; every later one gets
+# candidate-odd-size.o, which makes objdiff panic until, a few thousand panics in, the engine dies.
 set -e
 FIXTURE_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$1/genesis-done" ]; then

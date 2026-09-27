@@ -127,7 +127,7 @@ export class Compiler {
     await fs.unlink(objPath).catch(() => {});
   }
 
-  /** Run `use` on a compiled object file, then clean it up, whether `use` returns or throws. */
+  /** Run `use` on a compiled object file, then clean it up even if `use` throws. */
   static async using<T>(objPath: string, use: (objPath: string) => Promise<T>): Promise<T> {
     try {
       return await use(objPath);

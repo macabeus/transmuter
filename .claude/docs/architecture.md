@@ -80,7 +80,7 @@ transmuter/
 │   │   │   │   ├── canonicalizer.ts    # Deterministic AST simplification passes
 │   │   │   │   └── smell.ts            # AST-based smell scorer (temp vars, casts, do-while(0), etc.)
 │   │   │   ├── scoring/
-│   │   │   │   └── scorer.ts           # Scorer over @matchkit/scoring (score, scoreWithAssembly, assemblyDiff, report)
+│   │   │   │   └── scorer.ts           # Scorer over @matchkit/scoring (score + scoreWithAssembly + assemblyDiff + report)
 │   │   │   ├── compiler/
 │   │   │   │   └── compiler.ts         # Shell script compilation wrapper (language-aware file extensions)
 │   │   │   ├── reducer/
@@ -185,7 +185,7 @@ Test runner: `bun --bun vitest run`. The `--bun` flag forces vitest's Node sheba
 - `tree-sitter-c` — C grammar (prebuild `.node` loaded via `createRequire` + `require.resolve`)
 - `@ast-grep/lang-cpp` — C++ grammar (official ast-grep package with platform-specific binaries)
 - `tree-sitter-pascal` — Pascal/Delphi/FreePascal grammar (Isopod/tree-sitter-pascal; built locally via node-gyp)
-- `@matchkit/scoring` — assembly diffing and scoring (objdiff-wasm, pinned; the scorer asmlift uses too)
+- `@matchkit/scoring` — assembly diffing and scoring (wraps a pinned objdiff-wasm)
 - `diff` — unified diff generation for reports
 
 **@transmuter/cli:**
@@ -1004,14 +1004,14 @@ Profile resolution: explicit `--profile` flag > compiler command auto-detection 
 
 ## 16. Scoring (@matchkit/scoring)
 
-Scoring is [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring), the same scorer asmlift uses: objdiff-wasm pinned to an exact version, the target on objdiff's left side and the candidate on its right, fail-closed (a pair that cannot be diffed throws; it is never a score). The package loads the WASM once per process (and once per Bun Worker).
+Scoring goes through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring), shared with asmlift. It pins objdiff-wasm to an exact version, puts the target on objdiff's left side and the candidate on its right, and throws on a pair it cannot diff rather than returning a score. The WASM loads once per process (and once per Bun Worker).
 
-**`Scorer`** (`scoring/scorer.ts`) — Transmuter's adapter over it. Parses the target object once on `init()` and caches it. Provides:
+**`Scorer`** (`scoring/scorer.ts`) — Transmuter's wrapper over it. Parses the target object once on `init()` and caches it. Provides:
 - `score(candidateObjPath)` — returns numeric difference count
 - `scoreWithAssembly(candidateObjPath)` — returns `AssemblyScoreResult` with `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in a single pass
 - `assemblyDiff(candidateObjPath)` — returns side-by-side text diff (target left, candidate right)
 - `report(candidateObjPath)` — both sides' assembly, the side-by-side diff, and each differing row as prompt text and as `structuredDifferences` (INSERTION, DELETION, REPLACEMENT, OPCODE_MISMATCH, ARGUMENT_MISMATCH)
 
-Every method returns `null` when the function symbol is missing from either object, and throws when the pair cannot be diffed (an object the engine cannot parse, a row it cannot display).
+Every method returns `null` when the function symbol is missing from either object, and throws when the pair cannot be diffed (an unparseable object, an undisplayable row).
 
 The pipeline uses `scoreWithAssembly()` so that every candidate gets its assembly data captured at creation time with zero extra cost.

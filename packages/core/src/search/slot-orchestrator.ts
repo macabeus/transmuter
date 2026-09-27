@@ -114,7 +114,6 @@ export class SlotOrchestrator {
   #mutationDepth: number;
   #nextJobId = 0;
   #stopped = false;
-  /** why the scoring engine failed, once it has; the search stops on it */
   #engineFailure: string | null = null;
   #runResolve: (() => void) | null = null;
   #stopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -239,7 +238,7 @@ export class SlotOrchestrator {
     return this.#slotStats.compiled + this.#slotStats.errors + this.#slotStats.scorerFailures;
   }
 
-  /** The scoring engine's failure, when it failed and stopped the search; otherwise null. */
+  /** The error of the scoring-engine failure that stopped the search, or null. */
   getEngineFailure(): string | null {
     return this.#engineFailure;
   }
@@ -585,9 +584,8 @@ export class SlotOrchestrator {
         return;
       }
       case 'engine-failed': {
-        // The engine is dead in that worker, and every candidate would fail the same way: stop,
-        // instead of counting one scorer failure per candidate until maxCompiles (which the CLI
-        // leaves unbounded by default).
+        // Every later candidate would fail the same way: stop rather than count
+        // scorer failures until maxCompiles (unbounded by default in the CLI).
         this.#slotStats.scorerFailures++;
         this.#engineFailure = result.error;
         this.#stopped = true;

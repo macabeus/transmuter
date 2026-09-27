@@ -1,6 +1,5 @@
 /**
- * Scorer — scores a compiled candidate against the target with @matchkit/scoring, the scorer
- * asmlift uses too.
+ * Scorer — wraps @matchkit/scoring for assembly comparison and scoring.
  *
  * Score = instruction-level difference count between candidate and target.
  * Lower is better, 0 = perfect match.
@@ -17,13 +16,13 @@ import { assembly, differences, sideBySide } from '@matchkit/scoring/display';
 import fs from 'fs/promises';
 import type { AssemblyScoreResult, DiffType, StructuredDifference } from '~/types.js';
 
-/** What `Scorer.report` returns: one candidate, every way a report shows it. */
+/** Result of `Scorer.report()`. */
 export interface DiffReport {
   assembly: string;
   targetAssembly: string;
-  /** target and candidate side by side */
+  /** Target and candidate side by side. */
   diff: string;
-  /** the differing rows as prompt text, four lines each */
+  /** The differing rows as prompt text, four lines each. */
   differences: string[];
   structuredDifferences: StructuredDifference[];
   differenceCount: number;
@@ -62,15 +61,15 @@ export class Scorer {
   /**
    * Score a compiled candidate object file.
    * Returns the difference count (lower = better, 0 = perfect match).
-   * Returns null if the function symbol is not found. Throws when the pair cannot be diffed (an
-   * object the engine cannot parse, a row it cannot display) — that is never a score.
+   * Returns null if the function symbol is not found. Throws if the pair cannot be diffed (an
+   * unparseable object, an undisplayable row) rather than returning a score.
    */
   async score(candidateObjPath: string): Promise<number | null> {
     const inspection = await this.#inspect(candidateObjPath);
     return inspection?.score.score ?? null;
   }
 
-  /** Score a candidate and also extract its assembly and the side-by-side diff, in one pass. */
+  /** Score a candidate and extract its assembly and the side-by-side diff in one pass. */
   async scoreWithAssembly(candidateObjPath: string): Promise<AssemblyScoreResult | null> {
     const inspection = await this.#inspect(candidateObjPath);
     if (inspection === null) {
@@ -86,7 +85,7 @@ export class Scorer {
   }
 
   /**
-   * Target and candidate side by side, a `|` between them where a row differs.
+   * Side-by-side assembly diff, target on the left; differing rows are marked with `|`.
    * Returns null if the function is not found.
    */
   async assemblyDiff(candidateObjPath: string): Promise<string | null> {
@@ -95,8 +94,8 @@ export class Scorer {
   }
 
   /**
-   * Everything a report shows about one candidate: both sides' assembly, the side-by-side diff, and
-   * each differing row. Returns null if the function is not found.
+   * Both sides' assembly, the side-by-side diff, and each differing row.
+   * Returns null if the function is not found.
    */
   async report(candidateObjPath: string): Promise<DiffReport | null> {
     const inspection = await this.#inspect(candidateObjPath);
