@@ -1004,7 +1004,7 @@ Profile resolution: explicit `--profile` flag > compiler command auto-detection 
 
 ## 16. Scoring (@matchkit/scoring)
 
-Scoring goes through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring), shared with asmlift. It pins objdiff-wasm to an exact version, puts the target on objdiff's left side and the candidate on its right, and throws on a pair it cannot diff rather than returning a score. The WASM loads once per process (and once per Bun Worker).
+Scoring goes through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring), shared with asmlift. It pins objdiff-wasm to an exact version, puts the target on objdiff's left side and the candidate on its right, and throws on a pair it cannot diff. The WASM loads once per process (and once per Bun Worker).
 
 **`Scorer`** (`scoring/scorer.ts`) — Transmuter's wrapper over it. Parses the target object once on `init()` and caches it. Provides:
 - `score(candidateObjPath)` — returns numeric difference count

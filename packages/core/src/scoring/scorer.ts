@@ -62,7 +62,7 @@ export class Scorer {
    * Score a compiled candidate object file.
    * Returns the difference count (lower = better, 0 = perfect match).
    * Returns null if the function symbol is not found. Throws if the pair cannot be diffed (an
-   * unparseable object, an undisplayable row) rather than returning a score.
+   * unparseable object, an undisplayable row).
    */
   async score(candidateObjPath: string): Promise<number | null> {
     const inspection = await this.#inspect(candidateObjPath);

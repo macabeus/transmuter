@@ -53,10 +53,9 @@ describe('Scorer', () => {
       'renamed',
       armThumbAsm(thumbFunc('something_else', ['add r0, #1', 'bx lr'])),
     );
-    // size=0 regression fixture pair — the target has `F` with no `.size`
-    // directive, so ELF reports its size as 0 and objdiff treats it as
-    // spanning to the end of the section, absorbing the four trailing
-    // instructions. Mirrors the real-world ROM-extracted decomp scenario.
+    // The target's `F` has no `.size` directive, so ELF reports its size as 0
+    // and objdiff extends it to the end of the section, absorbing the four
+    // trailing instructions.
     unsizedTargetPath = await assembleArmThumb(
       tempDir,
       'unsized_target',
@@ -329,8 +328,8 @@ describe('Scorer', () => {
     });
 
     it('names an extra instruction by the side it is on: the CANDIDATE’s extra row is an insert', async () => {
-      // The target is objdiff's left side and the candidate its right, as in
-      // objdiff's UI.
+      // The target is objdiff's left side, so a row only the candidate has is
+      // an insertion.
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
       const report = await scorer.report(addOneTwicePath);
@@ -349,8 +348,8 @@ describe('Scorer', () => {
     });
 
     it('detects absorbed instructions when the target symbol has size=0', async () => {
-      // The target's unsized `F` absorbs the next function's instructions;
-      // they must be reported as differences, never silently matched.
+      // The target's unsized `F` absorbs the next function's four
+      // instructions, which count as differences.
       const scorer = new Scorer(unsizedTargetPath, 'F', ARM_DIFF_SETTINGS);
       await scorer.init();
       const report = await scorer.report(boundedCandidatePath);

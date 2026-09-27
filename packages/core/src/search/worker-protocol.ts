@@ -116,7 +116,7 @@ export type WorkerResult =
       /**
        * The scoring engine itself failed (`EngineFailedError`): every later
        * score in this worker would fail the same way, so the orchestrator
-       * stops the search instead of counting each candidate as 'scorer-failed'.
+       * stops the search.
        */
       readonly kind: 'engine-failed';
       readonly jobId: number;

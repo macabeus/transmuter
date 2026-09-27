@@ -584,8 +584,7 @@ export class SlotOrchestrator {
         return;
       }
       case 'engine-failed': {
-        // Every later candidate would fail the same way: stop rather than count
-        // scorer failures until maxCompiles (unbounded by default in the CLI).
+        // Every later candidate would fail the same way, so the search stops.
         this.#slotStats.scorerFailures++;
         this.#engineFailure = result.error;
         this.#stopped = true;
