@@ -1,3 +1,4 @@
+import { UndiffableError } from '@matchkit/scoring';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -22,6 +23,8 @@ describe('Scorer', () => {
   let renamedPath: string;
   let unsizedTargetPath: string;
   let boundedCandidatePath: string;
+  let multiPath: string;
+  let undecodablePath: string;
 
   beforeAll(async () => {
     ensureArmToolchain();
@@ -72,6 +75,22 @@ describe('Scorer', () => {
       'bounded_candidate',
       armThumbAsm(thumbFunc('F', ['add r0, #1', 'bx lr'])),
     );
+    multiPath = await assembleArmThumb(
+      tempDir,
+      'multi',
+      armThumbAsm(
+        [thumbFunc('add_one', ['add r0, #1', 'bx lr']), '', thumbFunc('mul_two', ['lsl r0, r0, #1', 'bx lr'])].join(
+          '\n',
+        ),
+      ),
+    );
+    // 0xe800 is the first half of a 32-bit Thumb-2 instruction, which ARMv4T has none of: objdiff
+    // shows it as `<illegal>` and diffs it against itself as `none`
+    undecodablePath = await assembleArmThumb(
+      tempDir,
+      'undecodable',
+      armThumbAsm(thumbFunc('F', ['add r0, #1', '.inst.n 0xe800', 'bx lr'])),
+    );
   });
 
   afterAll(async () => {
@@ -89,6 +108,7 @@ describe('Scorer', () => {
       ['score', (s: Scorer, p: string) => s.score(p)],
       ['scoreWithAssembly', (s: Scorer, p: string) => s.scoreWithAssembly(p)],
       ['assemblyDiff', (s: Scorer, p: string) => s.assemblyDiff(p)],
+      ['report', (s: Scorer, p: string) => s.report(p)],
     ] as const)('throws from %s() when init() has not been called', async (_name, call) => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await expect(call(scorer, addOnePath)).rejects.toThrow(/not initialized/);
@@ -243,8 +263,8 @@ describe('Scorer', () => {
       const diff = await scorer.assemblyDiff(addOnePath);
 
       expect(diff).not.toBeNull();
-      expect(diff!).toContain('candidate');
-      expect(diff!).toContain('target');
+      // the target is objdiff's left side, and the left column
+      expect(diff!.split('\n')[0]).toMatch(/^target\s+candidate$/);
       // The diff-kind marker — only present when a row actually differs.
       expect(diff!.includes('| ')).toBe(false);
     });
@@ -350,6 +370,24 @@ describe('Scorer', () => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
       expect(await scorer.report(renamedPath)).toBeNull();
+    });
+
+    it('reports only the rows of the requested symbol', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(multiPath);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(0);
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.assembly).not.toMatch(/lsl/);
+    });
+
+    it('throws, never scores, when a row decodes on neither side', async () => {
+      const scorer = new Scorer(undecodablePath, 'F', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      await expect(scorer.score(undecodablePath)).rejects.toThrow(UndiffableError);
+      await expect(scorer.report(undecodablePath)).rejects.toThrow(/does not decode as an instruction/);
     });
   });
 });

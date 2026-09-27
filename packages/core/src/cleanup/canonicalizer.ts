@@ -134,8 +134,7 @@ export class Canonicalizer {
     if (!result.success) {
       return false;
     }
-    const score = await this.#scorer.score(result.objPath);
-    await Compiler.cleanup(result.objPath);
+    const score = await Compiler.using(result.objPath, (obj) => this.#scorer.score(obj));
     return score === 0;
   }
 }

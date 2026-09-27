@@ -84,8 +84,7 @@ export class Reducer {
     if (!result.success) {
       return null;
     }
-    const score = await this.#scorer.score(result.objPath);
-    await Compiler.cleanup(result.objPath);
+    const score = await Compiler.using(result.objPath, (obj) => this.#scorer.score(obj));
     return score;
   }
 

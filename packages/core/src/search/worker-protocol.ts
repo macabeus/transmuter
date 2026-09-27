@@ -113,6 +113,19 @@ export type WorkerResult =
       readonly timings: PhaseTimings;
     }
   | {
+      /**
+       * The objdiff engine itself failed (@matchkit/scoring's EngineFailedError): every later score
+       * in this worker would fail the same way, so the search must stop rather than count each
+       * candidate as a scorer failure.
+       */
+      readonly kind: 'engine-failed';
+      readonly jobId: number;
+      readonly mutationTargetId: string;
+      readonly ruleId: string;
+      readonly error: string;
+      readonly timings: PhaseTimings;
+    }
+  | {
       readonly kind: 'scored';
       readonly jobId: number;
       readonly mutationTargetId: string;

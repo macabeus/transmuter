@@ -127,6 +127,15 @@ export class Compiler {
     await fs.unlink(objPath).catch(() => {});
   }
 
+  /** Run `use` on a compiled object file, then clean it up, whether `use` returns or throws. */
+  static async using<T>(objPath: string, use: (objPath: string) => Promise<T>): Promise<T> {
+    try {
+      return await use(objPath);
+    } finally {
+      await Compiler.cleanup(objPath);
+    }
+  }
+
   /** Remove the shared temp directory. Called on shutdown. */
   async destroy(): Promise<void> {
     // Wait for any in-flight compiles before wiping the tmp dir from under them.

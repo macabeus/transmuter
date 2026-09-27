@@ -27,7 +27,7 @@ Until someone writes the plugin, none of the above exists in code.
 
 ## Scoring
 
-Transmuter scores through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring). Mizuchi's `src/shared/objdiff.ts` (and `objdiff-service.ts`) is a separate wrapper, and it can score the same pair differently: it takes objdiff-wasm as a range (`^3.8.0`) and puts the candidate on objdiff's left side, where `@matchkit/scoring` puts the target. A Mizuchi–Transmuter bridge should score through `@matchkit/scoring` on both sides.
+Transmuter scores through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring). Mizuchi's `src/shared/objdiff.ts` is a separate wrapper, and it can score the same pair differently: it takes objdiff-wasm as a range (`^3.8.0`) and puts the candidate on objdiff's left side, where `@matchkit/scoring` puts the target. A Mizuchi–Transmuter bridge should score through `@matchkit/scoring` on both sides.
 
 ## If you're told to "integrate Mizuchi with Transmuter"
 

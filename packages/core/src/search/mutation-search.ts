@@ -186,8 +186,7 @@ export class MutationSearch {
         return result;
       }
 
-      const initialResult = await scorer.scoreWithAssembly(initialCompile.objPath);
-      await Compiler.cleanup(initialCompile.objPath);
+      const initialResult = await Compiler.using(initialCompile.objPath, (obj) => scorer.scoreWithAssembly(obj));
 
       if (initialResult === null) {
         const result: MutationSearchResult = {
@@ -282,8 +281,7 @@ export class MutationSearch {
           continue;
         }
 
-        const hypResult = await scorer.scoreWithAssembly(hypCompile.objPath);
-        await Compiler.cleanup(hypCompile.objPath);
+        const hypResult = await Compiler.using(hypCompile.objPath, (obj) => scorer.scoreWithAssembly(obj));
 
         if (hypResult === null) {
           emit({ type: 'hypothesis-scored', constraintId: constraint.id, score: -1 });
@@ -392,7 +390,7 @@ export class MutationSearch {
       let reason: MutationSearchResult['reason'];
       if (best.score === 0) {
         reason = 'perfect-match';
-      } else if (this.#abortController.signal.aborted) {
+      } else if (this.#abortController.signal.aborted || this.#orchestrator.getEngineFailure() !== null) {
         reason = 'aborted';
       } else if (
         this.#opts.maxCompiles !== undefined &&
@@ -475,8 +473,7 @@ export class MutationSearch {
 
     const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
     await scorer.init();
-    const scoreResult = await scorer.scoreWithAssembly(compileResult.objPath);
-    await Compiler.cleanup(compileResult.objPath);
+    const scoreResult = await Compiler.using(compileResult.objPath, (obj) => scorer.scoreWithAssembly(obj));
 
     if (scoreResult === null) {
       return null;

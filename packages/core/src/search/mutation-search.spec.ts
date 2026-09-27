@@ -3,7 +3,8 @@
  * orchestrator + real Bun Workers + real compiler subprocesses + real
  * objdiff-wasm scoring) through the public API.
  */
-import { readFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { MutationSearch } from '~/search/mutation-search.js';
@@ -206,5 +207,32 @@ describe('MutationSearch', () => {
       expect(b.result.bestSource).toBe(a.result.bestSource);
       expect(b.result.totalIterations).toBe(a.result.totalIterations);
     }, 90_000);
+  });
+  describe('engine failure', () => {
+    it('stops the search when the scoring engine fails, instead of failing every candidate', async () => {
+      // Every candidate after genesis is an object the engine panics on. Each panic is that
+      // candidate's `scorer-failed`, until the engine dies (a few thousand panics); from there the
+      // search must stop, not count one failure per candidate until maxCompiles.
+      const engineDir = new URL('../../../../test-fixture/engine-failure/', import.meta.url).pathname;
+      const state = mkdtempSync(join(tmpdir(), 'transmuter-engine-failure-'));
+      try {
+        const { result, events } = await runSearch({
+          source: fadeSource.replaceAll('FadeOutController', 'add_one'),
+          functionName: 'add_one',
+          targetObjectPath: join(engineDir, 'target.o'),
+          compilerCommand: `${join(engineDir, 'compile.sh')} ${state} {{inputPath}} {{outputPath}}`,
+          maxCompiles: 10_000,
+          seed: 1,
+        });
+
+        expect(result.reason).toBe('aborted');
+        const failures = events.filter((e) => e.type === 'scorer-failed').length;
+        expect(failures).toBeGreaterThan(0);
+        expect(failures).toBeLessThan(10_000);
+        expect(events.some((e) => e.type === 'error' && /scoring engine failed/.test(e.message))).toBe(true);
+      } finally {
+        rmSync(state, { recursive: true, force: true });
+      }
+    }, 180_000);
   });
 });

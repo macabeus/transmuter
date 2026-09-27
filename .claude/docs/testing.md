@@ -45,7 +45,7 @@ packages/core/src/
 
 ## Scoring specs — real assembly fixtures
 
-`packages/core/src/scoring/scorer.spec.ts`, `objdiff.spec.ts`, and `test-utils.ts` shell out to `arm-none-eabi-as`. The helpers:
+`packages/core/src/scoring/scorer.spec.ts` and `test-utils.ts` shell out to `arm-none-eabi-as`. The helpers:
 
 ```ts
 import { execSync } from 'child_process';
@@ -73,7 +73,7 @@ Patterns:
 - **`beforeAll`** builds every fixture once (temp dir created with `fs.mkdtemp`), **`afterAll`** cleans up with `fs.rm({ recursive: true, force: true })`.
 - **`ensureArmToolchain()`** is called at the top of `beforeAll` for fail-fast error reporting — the message should point at the missing toolchain, not at the first failing assert deep in the spec.
 - **Thumb syntax is divided**, not unified: write `add r0, #1`, not `adds r0, #1`. Unified syntax fails `arm-none-eabi-as` in Thumb16 mode.
-- **ARMv4T never emits `op-mismatch`.** Mnemonic-only diffs always land in the `replace` bucket. There's an explicit regression note in `scorer.spec.ts` and `objdiff.spec.ts` — don't "fix" these to assert `opMismatch > 0`.
+- **ARMv4T never emits `op-mismatch`.** Mnemonic-only diffs always land in the `replace` bucket. There's an explicit regression note in `scorer.spec.ts` — don't "fix" these to assert `opMismatch > 0`.
 - **`unsizedThumbFunc`** (no `.size` directive) produces ELF symbols with `size = 0` that span to end of section. Used to reproduce the real ROM-extracted "symbol absorbs next function" scenario. See the `detects absorbed instructions when the target symbol has size=0` test.
 
 ## Compiler specs — real agbcc / IDO
