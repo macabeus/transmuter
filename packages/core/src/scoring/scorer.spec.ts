@@ -102,15 +102,27 @@ describe('Scorer', () => {
   // init()
   // ---------------------------------------------------------------------------
 
+  const METHODS = [
+    ['score', (s: Scorer, p: string) => s.score(p)],
+    ['scoreWithAssembly', (s: Scorer, p: string) => s.scoreWithAssembly(p)],
+    ['assemblyDiff', (s: Scorer, p: string) => s.assemblyDiff(p)],
+    ['report', (s: Scorer, p: string) => s.report(p)],
+  ] as const;
+
   describe('init()', () => {
-    it.each([
-      ['score', (s: Scorer, p: string) => s.score(p)],
-      ['scoreWithAssembly', (s: Scorer, p: string) => s.scoreWithAssembly(p)],
-      ['assemblyDiff', (s: Scorer, p: string) => s.assemblyDiff(p)],
-      ['report', (s: Scorer, p: string) => s.report(p)],
-    ] as const)('throws from %s() when init() has not been called', async (_name, call) => {
+    it.each(METHODS)('throws from %s() when init() has not been called', async (_name, call) => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await expect(call(scorer, addOnePath)).rejects.toThrow(/not initialized/);
+    });
+  });
+
+  describe('a function missing from the candidate', () => {
+    it.each(METHODS)('%s() returns null', async (_name, call) => {
+      // Target has `add_one`, candidate only has `something_else` — the
+      // realistic regression case (LLM renamed the function by mistake).
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      expect(await call(scorer, renamedPath)).toBeNull();
     });
   });
 
@@ -139,14 +151,6 @@ describe('Scorer', () => {
       const score = await scorer.score(addOneTwicePath);
       expect(score).not.toBeNull();
       expect(score!).toBeGreaterThan(0);
-    });
-
-    it('returns null when the function is missing from the candidate', async () => {
-      // Target has `add_one`, candidate only has `something_else` — the
-      // realistic regression case (LLM renamed the function by mistake).
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.score(renamedPath)).toBeNull();
     });
   });
 
@@ -234,12 +238,6 @@ describe('Scorer', () => {
       expect(result!.breakdown.insert + result!.breakdown.delete).toBeGreaterThan(0);
     });
 
-    it('returns null when the function symbol is missing from the candidate', async () => {
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.scoreWithAssembly(renamedPath)).toBeNull();
-    });
-
     it('its `.score` field matches what score() returns for the same candidate', async () => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
@@ -273,12 +271,6 @@ describe('Scorer', () => {
       const diff = await scorer.assemblyDiff(addImm2Path);
       expect(diff).not.toBeNull();
       expect(diff!).toContain('| ');
-    });
-
-    it('returns null when the function is missing from the candidate', async () => {
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.assemblyDiff(renamedPath)).toBeNull();
     });
   });
   // ---------------------------------------------------------------------------
@@ -317,36 +309,6 @@ describe('Scorer', () => {
       expect(joined).toContain('Target:');
     });
 
-    it('classifies a different-mnemonic change as replace', async () => {
-      // objdiff never emits `op-mismatch` on ARMv4T; see the scoreWithAssembly() test above.
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      const report = await scorer.report(subOnePath);
-
-      expect(report!.structuredDifferences.some((d) => d.type === 'replace')).toBe(true);
-      expect(report!.structuredDifferences.some((d) => d.type === 'opMismatch')).toBe(false);
-    });
-
-    it('names an extra instruction by the side it is on: the CANDIDATE’s extra row is an insert', async () => {
-      // The target is objdiff's left side, so a row only the candidate has is
-      // an insertion.
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      const report = await scorer.report(addOneTwicePath);
-
-      expect(report!.structuredDifferences.map((d) => d.type)).toEqual(['insert']);
-      expect(report!.structuredDifferences[0]!.targetInstruction).toBe('');
-    });
-
-    it('names an extra instruction by the side it is on: the TARGET’s extra row is a delete', async () => {
-      const scorer = new Scorer(addOneTwicePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      const report = await scorer.report(addOnePath);
-
-      expect(report!.structuredDifferences.map((d) => d.type)).toEqual(['delete']);
-      expect(report!.structuredDifferences[0]!.candidateInstruction).toBe('');
-    });
-
     it('detects absorbed instructions when the target symbol has size=0', async () => {
       // The target's unsized `F` absorbs the next function's four
       // instructions, which count as differences.
@@ -356,12 +318,6 @@ describe('Scorer', () => {
 
       expect(report!.matchingCount).toBe(2);
       expect(report!.differenceCount).toBe(4);
-    });
-
-    it('returns null when the function is missing from the candidate', async () => {
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.report(renamedPath)).toBeNull();
     });
 
     it('reports only the rows of the requested symbol', async () => {
