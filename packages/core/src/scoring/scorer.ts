@@ -1,41 +1,50 @@
 /**
- * Scorer — wraps objdiff-wasm for assembly comparison and scoring.
+ * Scorer — scores a compiled candidate against the target with @matchkit/scoring, the scorer
+ * asmlift uses too.
  *
  * Score = instruction-level difference count between candidate and target.
  * Lower is better, 0 = perfect match.
  */
-import type * as ObjdiffWasm from 'objdiff-wasm';
-import type { AssemblyScoreResult, DiffBreakdown } from '~/types.js';
+import {
+  type Inspection,
+  type Scorer as MatchkitScorer,
+  SymbolNotFoundError,
+  type Target,
+  createScorer,
+  loadEngine,
+} from '@matchkit/scoring';
+import { assembly, differences, sideBySide } from '@matchkit/scoring/display';
+import fs from 'fs/promises';
+import type { AssemblyScoreResult, DiffType, StructuredDifference } from '~/types.js';
 
-type ObjdiffModule = typeof ObjdiffWasm;
-type ParsedObject = ObjdiffWasm.diff.Object;
-type ObjectDiff = ObjdiffWasm.diff.ObjectDiff;
-type DiffConfig = ObjdiffWasm.diff.DiffConfig;
-
-/** Lazy singleton for the WASM module. */
-let wasmModulePromise: Promise<ObjdiffModule> | null = null;
-
-async function getObjdiffModule(): Promise<ObjdiffModule> {
-  if (!wasmModulePromise) {
-    wasmModulePromise = initObjdiff();
-  }
-  return wasmModulePromise;
+/** What `Scorer.report` returns: one candidate, every way a report shows it. */
+export interface DiffReport {
+  assembly: string;
+  targetAssembly: string;
+  /** target and candidate side by side */
+  diff: string;
+  /** the differing rows as prompt text, four lines each */
+  differences: string[];
+  structuredDifferences: StructuredDifference[];
+  differenceCount: number;
+  matchingCount: number;
 }
 
-async function initObjdiff(): Promise<ObjdiffModule> {
-  const objdiff = await import('objdiff-wasm');
-  objdiff.init('error');
-  return objdiff;
-}
+const DIFF_TYPE_LABELS: Record<DiffType, string> = {
+  insert: 'INSERTION',
+  delete: 'DELETION',
+  replace: 'REPLACEMENT',
+  opMismatch: 'OPCODE_MISMATCH',
+  argMismatch: 'ARGUMENT_MISMATCH',
+};
 
 export class Scorer {
   #targetObjectPath: string;
   #functionName: string;
   #diffSettings: Record<string, string>;
 
-  #objdiff: ObjdiffModule | null = null;
-  #targetObj: ParsedObject | null = null;
-  #diffConfig: DiffConfig | null = null;
+  #scorer: MatchkitScorer | null = null;
+  #target: Target | null = null;
 
   constructor(targetObjectPath: string, functionName: string, diffSettings: Record<string, string> = {}) {
     this.#targetObjectPath = targetObjectPath;
@@ -43,278 +52,93 @@ export class Scorer {
     this.#diffSettings = diffSettings;
   }
 
-  /** Initialize: load WASM, parse the target object, create diff config. */
+  /** Initialize: load the engine and parse the target object once. */
   async init(): Promise<void> {
-    this.#objdiff = await getObjdiffModule();
-    this.#diffConfig = new this.#objdiff.diff.DiffConfig();
-    for (const [key, value] of Object.entries(this.#diffSettings)) {
-      this.#diffConfig.setProperty(key, value);
-    }
-
-    const targetBuffer = await Bun.file(this.#targetObjectPath).arrayBuffer();
-    this.#targetObj = this.#objdiff.diff.Object.parse(new Uint8Array(targetBuffer), this.#diffConfig, 'target');
+    const scorer = createScorer(await loadEngine(), { diffSettings: this.#diffSettings });
+    this.#target = scorer.parseTarget(new Uint8Array(await fs.readFile(this.#targetObjectPath)));
+    this.#scorer = scorer;
   }
 
   /**
    * Score a compiled candidate object file.
    * Returns the difference count (lower = better, 0 = perfect match).
-   * Returns null if the function symbol is not found.
+   * Returns null if the function symbol is not found. Throws when the pair cannot be diffed (an
+   * object the engine cannot parse, a row it cannot display) — that is never a score.
    */
   async score(candidateObjPath: string): Promise<number | null> {
-    if (!this.#objdiff || !this.#targetObj || !this.#diffConfig) {
-      throw new Error('Scorer not initialized — call init() first');
-    }
-
-    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
-    const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
-
-    const mappingConfig = {
-      mappings: [],
-      selectingLeft: undefined,
-      selectingRight: undefined,
-    };
-
-    const diffResult = this.#objdiff.diff.runDiff(candidateObj, this.#targetObj, this.#diffConfig, mappingConfig);
-
-    if (!diffResult.left || !diffResult.right) {
-      return null;
-    }
-
-    const breakdown = this.#extractDiffBreakdown(diffResult.left, diffResult.right);
-    return breakdown?.total ?? null;
+    const inspection = await this.#inspect(candidateObjPath);
+    return inspection?.score.score ?? null;
   }
 
-  /**
-   * Score a candidate and also extract assembly + diff in one pass.
-   * Avoids re-parsing the object file compared to calling score() + assemblyDiff() separately.
-   */
+  /** Score a candidate and also extract its assembly and the side-by-side diff, in one pass. */
   async scoreWithAssembly(candidateObjPath: string): Promise<AssemblyScoreResult | null> {
-    if (!this.#objdiff || !this.#targetObj || !this.#diffConfig) {
-      throw new Error('Scorer not initialized — call init() first');
+    const inspection = await this.#inspect(candidateObjPath);
+    if (inspection === null) {
+      return null;
     }
-
-    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
-    const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
-
-    const mappingConfig = {
-      mappings: [],
-      selectingLeft: undefined,
-      selectingRight: undefined,
+    const { score, breakdown } = inspection.score;
+    return {
+      score,
+      breakdown: { total: score, ...breakdown },
+      assembly: assembly(inspection, 'candidate'),
+      assemblyDiff: sideBySide(inspection),
     };
-
-    const diffResult = this.#objdiff.diff.runDiff(candidateObj, this.#targetObj, this.#diffConfig, mappingConfig);
-
-    if (!diffResult.left || !diffResult.right) {
-      return null;
-    }
-
-    const breakdown = this.#extractDiffBreakdown(diffResult.left, diffResult.right);
-    if (breakdown === null) {
-      return null;
-    }
-
-    const assembly = this.#extractAssembly(diffResult.left);
-    const assemblyDiff = this.#formatAssemblyDiff(diffResult.left, diffResult.right) ?? '';
-
-    return { score: breakdown.total, breakdown, assembly, assemblyDiff };
-  }
-
-  #extractAssembly(objDiff: ObjectDiff): string {
-    const objdiff = this.#objdiff!;
-    const diffConfig = this.#diffConfig!;
-
-    const symbol = objDiff.findSymbol(this.#functionName, undefined);
-    if (!symbol) {
-      return '';
-    }
-
-    const display = objdiff.display.displaySymbol(objDiff, symbol.id);
-    const lines: string[] = [];
-
-    for (let row = 0; row < display.rowCount; row++) {
-      try {
-        const instrRow = objdiff.display.displayInstructionRow(objDiff, symbol.id, row, diffConfig);
-        if (instrRow) {
-          const text = this.#rowToText(instrRow.segments);
-          if (text) {
-            lines.push(text);
-          }
-        }
-      } catch {
-        // Skip rows that fail
-      }
-    }
-
-    return lines.join('\n');
   }
 
   /**
-   * Produce a side-by-side assembly diff between candidate and target.
-   * Each line shows: candidate instruction | diff marker | target instruction.
+   * Target and candidate side by side, a `|` between them where a row differs.
    * Returns null if the function is not found.
    */
   async assemblyDiff(candidateObjPath: string): Promise<string | null> {
-    if (!this.#objdiff || !this.#targetObj || !this.#diffConfig) {
+    const inspection = await this.#inspect(candidateObjPath);
+    return inspection === null ? null : sideBySide(inspection);
+  }
+
+  /**
+   * Everything a report shows about one candidate: both sides' assembly, the side-by-side diff, and
+   * each differing row. Returns null if the function is not found.
+   */
+  async report(candidateObjPath: string): Promise<DiffReport | null> {
+    const inspection = await this.#inspect(candidateObjPath);
+    if (inspection === null) {
+      return null;
+    }
+    const structuredDifferences = differences(inspection).map(
+      (d): StructuredDifference => ({
+        row: d.row,
+        type: d.kind,
+        candidateInstruction: d.candidate,
+        targetInstruction: d.target,
+      }),
+    );
+    return {
+      assembly: assembly(inspection, 'candidate'),
+      targetAssembly: assembly(inspection, 'target'),
+      diff: sideBySide(inspection),
+      differences: structuredDifferences.flatMap((d, i) => [
+        `Difference ${i + 1} (${DIFF_TYPE_LABELS[d.type]}):`,
+        `- Current: \`${d.candidateInstruction || '(empty)'}\``,
+        `- Target:  \`${d.targetInstruction || '(empty)'}\``,
+        '',
+      ]),
+      structuredDifferences,
+      differenceCount: inspection.score.score,
+      matchingCount: inspection.score.matching,
+    };
+  }
+
+  async #inspect(candidateObjPath: string): Promise<Inspection | null> {
+    if (!this.#scorer || !this.#target) {
       throw new Error('Scorer not initialized — call init() first');
     }
-
-    const candidateBuffer = await Bun.file(candidateObjPath).arrayBuffer();
-    const candidateObj = this.#objdiff.diff.Object.parse(new Uint8Array(candidateBuffer), this.#diffConfig, 'base');
-
-    const mappingConfig = {
-      mappings: [],
-      selectingLeft: undefined,
-      selectingRight: undefined,
-    };
-
-    const diffResult = this.#objdiff.diff.runDiff(candidateObj, this.#targetObj, this.#diffConfig, mappingConfig);
-
-    if (!diffResult.left || !diffResult.right) {
-      return null;
-    }
-
-    return this.#formatAssemblyDiff(diffResult.left, diffResult.right);
-  }
-
-  #formatAssemblyDiff(leftDiff: ObjectDiff, rightDiff: ObjectDiff): string | null {
-    const objdiff = this.#objdiff!;
-    const diffConfig = this.#diffConfig!;
-
-    const leftSymbol = leftDiff.findSymbol(this.#functionName, undefined);
-    const rightSymbol = rightDiff.findSymbol(this.#functionName, undefined);
-
-    if (!leftSymbol || !rightSymbol) {
-      return null;
-    }
-
-    const leftDisplay = objdiff.display.displaySymbol(leftDiff, leftSymbol.id);
-    const rightDisplay = objdiff.display.displaySymbol(rightDiff, rightSymbol.id);
-    const rowCount = Math.max(leftDisplay.rowCount, rightDisplay.rowCount);
-
-    const lines: string[] = [];
-    for (let row = 0; row < rowCount; row++) {
-      try {
-        const leftRow = objdiff.display.displayInstructionRow(leftDiff, leftSymbol.id, row, diffConfig);
-        const rightRow = objdiff.display.displayInstructionRow(rightDiff, rightSymbol.id, row, diffConfig);
-
-        const leftText = leftRow ? this.#rowToText(leftRow.segments) : '';
-        const rightText = rightRow ? this.#rowToText(rightRow.segments) : '';
-
-        const leftKind = leftRow?.diffKind ?? 'none';
-        const rightKind = rightRow?.diffKind ?? 'none';
-        const marker = leftKind === 'none' && rightKind === 'none' ? '  ' : '| ';
-
-        lines.push(`${leftText.padEnd(40)} ${marker} ${rightText}`);
-      } catch {
-        lines.push(`${'???'.padEnd(40)} |  ???`);
+    const candidate = new Uint8Array(await fs.readFile(candidateObjPath));
+    try {
+      return this.#scorer.inspect(this.#target, candidate, this.#functionName);
+    } catch (error) {
+      if (error instanceof SymbolNotFoundError) {
+        return null;
       }
+      throw error;
     }
-
-    return `${'candidate'.padEnd(40)}    ${'target'}\n${'─'.repeat(40)} ── ${'─'.repeat(40)}\n${lines.join('\n')}`;
-  }
-
-  #rowToText(segments: { text: unknown }[]): string {
-    let result = '';
-    for (const seg of segments) {
-      const t = seg.text as { tag: string; val: unknown };
-      switch (t.tag) {
-        case 'basic': // register names, punctuation (e.g., "r0", ", ", "#")
-        case 'opaque': // misc text
-          result += t.val as string;
-          break;
-        case 'line': // instruction size/line number — skip
-        case 'branch-arrow': // visual branch arrow — skip for text output
-          break;
-        case 'spacing':
-          result += ' '.repeat(t.val as number);
-          break;
-        case 'eol':
-          break;
-        case 'opcode': {
-          const op = t.val as { mnemonic: string };
-          result += op.mnemonic + ' ';
-          break;
-        }
-        case 'address': {
-          const addr = Number(t.val as bigint);
-          result += `${addr.toString(16).padStart(2, '0')}: `;
-          break;
-        }
-        case 'branch-dest':
-          result += `0x${(t.val as bigint).toString(16)}`;
-          break;
-        case 'signed':
-          result += String(t.val);
-          break;
-        case 'unsigned':
-          result += String(t.val);
-          break;
-        case 'symbol': {
-          const sym = t.val as { name: string };
-          result += sym.name;
-          break;
-        }
-        case 'addend':
-          result += String(t.val);
-          break;
-        default:
-          result += JSON.stringify(t.val);
-          break;
-      }
-    }
-    return result.trim();
-  }
-
-  #extractDiffBreakdown(leftDiff: ObjectDiff, rightDiff: ObjectDiff): DiffBreakdown | null {
-    const objdiff = this.#objdiff!;
-    const diffConfig = this.#diffConfig!;
-
-    const leftSymbol = leftDiff.findSymbol(this.#functionName, undefined);
-    const rightSymbol = rightDiff.findSymbol(this.#functionName, undefined);
-
-    if (!leftSymbol || !rightSymbol) {
-      return null;
-    }
-
-    const leftDisplay = objdiff.display.displaySymbol(leftDiff, leftSymbol.id);
-    const rightDisplay = objdiff.display.displaySymbol(rightDiff, rightSymbol.id);
-    const rowCount = Math.max(leftDisplay.rowCount, rightDisplay.rowCount);
-
-    let insert = 0;
-    let del = 0;
-    let replace = 0;
-    let opMismatch = 0;
-    let argMismatch = 0;
-
-    for (let row = 0; row < rowCount; row++) {
-      try {
-        const leftRow = objdiff.display.displayInstructionRow(leftDiff, leftSymbol.id, row, diffConfig);
-        const rightRow = objdiff.display.displayInstructionRow(rightDiff, rightSymbol.id, row, diffConfig);
-
-        const leftKind = leftRow?.diffKind ?? 'none';
-        const rightKind = rightRow?.diffKind ?? 'none';
-
-        if (leftKind === 'none' && rightKind === 'none') {
-          continue;
-        }
-
-        if (leftKind === 'insert' || rightKind === 'insert') {
-          insert++;
-        } else if (leftKind === 'delete' || rightKind === 'delete') {
-          del++;
-        } else if (leftKind === 'op-mismatch' || rightKind === 'op-mismatch') {
-          opMismatch++;
-        } else if (leftKind === 'arg-mismatch' || rightKind === 'arg-mismatch') {
-          argMismatch++;
-        } else {
-          replace++;
-        }
-      } catch {
-        replace++;
-      }
-    }
-
-    const total = insert + del + replace + opMismatch + argMismatch;
-    return { total, insert, delete: del, replace, opMismatch, argMismatch };
   }
 }

@@ -80,8 +80,7 @@ transmuter/
 │   │   │   │   ├── canonicalizer.ts    # Deterministic AST simplification passes
 │   │   │   │   └── smell.ts            # AST-based smell scorer (temp vars, casts, do-while(0), etc.)
 │   │   │   ├── scoring/
-│   │   │   │   ├── scorer.ts           # Scorer (score + scoreWithAssembly + assemblyDiff)
-│   │   │   │   └── objdiff.ts          # Objdiff wrapper (parse, diff, assembly extraction)
+│   │   │   │   └── scorer.ts           # Scorer over @matchkit/scoring (score, scoreWithAssembly, assemblyDiff, report)
 │   │   │   ├── compiler/
 │   │   │   │   └── compiler.ts         # Shell script compilation wrapper (language-aware file extensions)
 │   │   │   ├── reducer/
@@ -163,11 +162,10 @@ Bun's relevance at specific hot spots:
 | Site | Bun API | Why |
 |------|---------|-----|
 | `Compiler.#exec` | `Bun.spawn` with fd stdio (`stdio: ['ignore', stdoutFd, stderrFd]`) | Wine/mwcc writes stderr through a pipe extremely slowly on macOS (~5 s per compile); fd stdio avoids this. See § 7 |
-| `Compiler` source write / obj read, `Scorer` object reads | `Bun.write` / `Bun.file(p).arrayBuffer()` | Faster I/O paths than `fs.promises` |
+| `Compiler` source write / obj read | `Bun.write` / `Bun.file(p).arrayBuffer()` | Faster I/O paths than `fs.promises` |
 | `Deduplicator.hash` | `Bun.hash(source).toString(36)` | Wyhash is ~10× faster than `crypto.createHash('sha256')` and dedup doesn't need a cryptographic hash |
 | `createControlServer` | `Bun.serve` | Native HTTP server; replaces `@hono/node-server` which had a hard Node dependency |
 | `ctl` HTTP client | `fetch()` | Native; replaces `http.request` |
-| objdiff-wasm loader | Bun's native `fetch` resolves `file://` URLs | The old `globalThis.fetch` monkey-patch is unnecessary and has been removed |
 
 Test runner: `bun --bun vitest run`. The `--bun` flag forces vitest's Node shebang to be ignored — plain `bun run vitest` would still launch a Node process and the `Bun.*` APIs would be undefined. Tests live alongside code (`*.spec.ts`) and run against real compilers.
 
@@ -187,7 +185,7 @@ Test runner: `bun --bun vitest run`. The `--bun` flag forces vitest's Node sheba
 - `tree-sitter-c` — C grammar (prebuild `.node` loaded via `createRequire` + `require.resolve`)
 - `@ast-grep/lang-cpp` — C++ grammar (official ast-grep package with platform-specific binaries)
 - `tree-sitter-pascal` — Pascal/Delphi/FreePascal grammar (Isopod/tree-sitter-pascal; built locally via node-gyp)
-- `objdiff-wasm` — assembly diffing and scoring
+- `@matchkit/scoring` — assembly diffing and scoring (objdiff-wasm, pinned; the scorer asmlift uses too)
 - `diff` — unified diff generation for reports
 
 **@transmuter/cli:**
@@ -1004,22 +1002,16 @@ Profile resolution: explicit `--profile` flag > compiler command auto-detection 
 
 ---
 
-## 16. objdiff-wasm Integration
+## 16. Scoring (@matchkit/scoring)
 
-Two layers wrap objdiff-wasm:
+Scoring is [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring), the same scorer asmlift uses: objdiff-wasm pinned to an exact version, the target on objdiff's left side and the candidate on its right, fail-closed (a pair that cannot be diffed throws; it is never a score). The package loads the WASM once per process (and once per Bun Worker).
 
-**`Objdiff`** (`scoring/objdiff.ts`) — low-level wrapper ported from Mizuchi. Provides:
-- `parseObjectFile(path, side)` — parse a `.o` file into an objdiff Object
-- `runDiff(left, right)` — run diff between two parsed objects
-- `getSymbolNames(obj)` — extract all function/symbol names
-- `getAssemblyFromSymbol(objDiff, name)` — convert instruction rows to readable assembly text
-- `getDifferences(leftDiff, rightDiff, name)` — detailed categorized differences (INSERTION, DELETION, REPLACEMENT, OPCODE_MISMATCH, ARGUMENT_MISMATCH), also available as `structuredDifferences` with per-type counts
-
-WASM module is lazily loaded once per process via a shared singleton. Bun's native `fetch` resolves `file://` URLs directly, so the loader is a plain `await import('objdiff-wasm')` — no monkey-patch required. (Historical note: Bun ≤ 1.2.19 additionally lacked `WebAssembly.compileStreaming`, which `objdiff-wasm`'s loader relies on via a `.then(WebAssembly.compileStreaming)` chain; Bun 1.3.12 ships it natively, so the former polyfill has also been removed.)
-
-**`Scorer`** (`scoring/scorer.ts`) — higher-level class for the pipeline. Parses the target object once on `init()` and caches it. Provides:
+**`Scorer`** (`scoring/scorer.ts`) — Transmuter's adapter over it. Parses the target object once on `init()` and caches it. Provides:
 - `score(candidateObjPath)` — returns numeric difference count
 - `scoreWithAssembly(candidateObjPath)` — returns `AssemblyScoreResult` with `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in a single pass
-- `assemblyDiff(candidateObjPath)` — returns side-by-side text diff
+- `assemblyDiff(candidateObjPath)` — returns side-by-side text diff (target left, candidate right)
+- `report(candidateObjPath)` — both sides' assembly, the side-by-side diff, and each differing row as prompt text and as `structuredDifferences` (INSERTION, DELETION, REPLACEMENT, OPCODE_MISMATCH, ARGUMENT_MISMATCH)
+
+Every method returns `null` when the function symbol is missing from either object, and throws when the pair cannot be diffed (an object the engine cannot parse, a row it cannot display).
 
 The pipeline uses `scoreWithAssembly()` so that every candidate gets its assembly data captured at creation time with zero extra cost.

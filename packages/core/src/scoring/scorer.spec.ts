@@ -4,7 +4,14 @@ import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { Scorer } from './scorer.js';
-import { ARM_DIFF_SETTINGS, armThumbAsm, assembleArmThumb, ensureArmToolchain, thumbFunc } from './test-utils.js';
+import {
+  ARM_DIFF_SETTINGS,
+  armThumbAsm,
+  assembleArmThumb,
+  ensureArmToolchain,
+  thumbFunc,
+  unsizedThumbFunc,
+} from './test-utils.js';
 
 describe('Scorer', () => {
   let tempDir: string;
@@ -13,6 +20,8 @@ describe('Scorer', () => {
   let subOnePath: string;
   let addOneTwicePath: string;
   let renamedPath: string;
+  let unsizedTargetPath: string;
+  let boundedCandidatePath: string;
 
   beforeAll(async () => {
     ensureArmToolchain();
@@ -40,6 +49,28 @@ describe('Scorer', () => {
       tempDir,
       'renamed',
       armThumbAsm(thumbFunc('something_else', ['add r0, #1', 'bx lr'])),
+    );
+    // size=0 regression fixture pair — the target has `F` with no `.size`
+    // directive, so ELF reports its size as 0 and objdiff treats it as
+    // spanning to the end of the section, absorbing the four trailing
+    // instructions. Mirrors the real-world ROM-extracted decomp scenario.
+    unsizedTargetPath = await assembleArmThumb(
+      tempDir,
+      'unsized_target',
+      armThumbAsm(
+        [
+          unsizedThumbFunc('F', ['add r0, #1', 'bx lr']),
+          '\tmov r0, r1',
+          '\tlsl r0, r0, #2',
+          '\tadd r0, #5',
+          '\tbx lr',
+        ].join('\n'),
+      ),
+    );
+    boundedCandidatePath = await assembleArmThumb(
+      tempDir,
+      'bounded_candidate',
+      armThumbAsm(thumbFunc('F', ['add r0, #1', 'bx lr'])),
     );
   });
 
@@ -230,6 +261,95 @@ describe('Scorer', () => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
       expect(await scorer.assemblyDiff(renamedPath)).toBeNull();
+    });
+  });
+  // ---------------------------------------------------------------------------
+  // report()
+  // ---------------------------------------------------------------------------
+
+  describe('report()', () => {
+    it('reports zero differences and every row matching for two identical objects', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(addOnePath);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(0);
+      // Fixture has exactly two instructions — `add r0, #1` and `bx lr`.
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.differences).toEqual([]);
+      expect(report!.structuredDifferences).toEqual([]);
+      expect(report!.assembly).toBe(report!.targetAssembly);
+    });
+
+    it('classifies a single immediate change as argMismatch, with both sides’ text', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(addImm2Path);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(report!.structuredDifferences.length);
+      const argDiff = report!.structuredDifferences.find((d) => d.type === 'argMismatch');
+      expect(argDiff).toBeDefined();
+      // The immediate literally differs — "1" on the target side, "2" on the candidate's.
+      expect(argDiff!.targetInstruction).toMatch(/0x1/);
+      expect(argDiff!.candidateInstruction).toMatch(/0x2/);
+      const joined = report!.differences.join('\n');
+      expect(joined).toContain('Difference 1 (ARGUMENT_MISMATCH):');
+      expect(joined).toContain('Current:');
+      expect(joined).toContain('Target:');
+    });
+
+    it('classifies a different-mnemonic change as replace', async () => {
+      // On ARMv4T, objdiff's alignment rules do NOT emit `op-mismatch` for a
+      // different-mnemonic diff — they fall through to `replace`.
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(subOnePath);
+
+      expect(report!.structuredDifferences.some((d) => d.type === 'replace')).toBe(true);
+      expect(report!.structuredDifferences.some((d) => d.type === 'opMismatch')).toBe(false);
+    });
+
+    it('names an extra instruction by the side it is on: the CANDIDATE’s extra row is an insert', async () => {
+      // The target is objdiff's left side and the candidate its right, as in
+      // objdiff's own UI: a row only the candidate has is inserted.
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(addOneTwicePath);
+
+      expect(report!.structuredDifferences.map((d) => d.type)).toEqual(['insert']);
+      expect(report!.structuredDifferences[0]!.targetInstruction).toBe('');
+    });
+
+    it('names an extra instruction by the side it is on: the TARGET’s extra row is a delete', async () => {
+      const scorer = new Scorer(addOneTwicePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(addOnePath);
+
+      expect(report!.structuredDifferences.map((d) => d.type)).toEqual(['delete']);
+      expect(report!.structuredDifferences[0]!.candidateInstruction).toBe('');
+    });
+
+    it('detects absorbed instructions when the target symbol has size=0', async () => {
+      // Regression for the real ROM-extraction scenario: the target .o has a
+      // symbol with no `.size` directive, so it extends to the end of the
+      // section — covering instructions that "belong" to the next function.
+      // They must be reported as differences, never silently matched.
+      const scorer = new Scorer(unsizedTargetPath, 'F', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(boundedCandidatePath);
+
+      // The first two rows (add + bx) match exactly; the four trailing
+      // absorbed rows on the target side are reported as differences.
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.differenceCount).toBe(4);
+    });
+
+    it('returns null when the function is missing from the candidate', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      expect(await scorer.report(renamedPath)).toBeNull();
     });
   });
 });

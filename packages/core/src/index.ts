@@ -127,8 +127,7 @@ export type { IsolateResult } from './isolate/isolate.js';
 export { extractFunctionDefinition } from './isolate/extract-function.js';
 
 // Scoring (for advanced consumers)
-export { Scorer } from './scoring/scorer.js';
-export { Objdiff } from './scoring/objdiff.js';
+export { Scorer, type DiffReport } from './scoring/scorer.js';
 
 // Compiler (for advanced consumers)
 export { Compiler } from './compiler/compiler.js';

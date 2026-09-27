@@ -47,7 +47,7 @@ CLI commands: `match`, `refine`, `profile-detect`, `ctl`. There is no standalone
 - **Core pipeline**: `MutationSearch` runs N concurrent slots. Each slot loop = `pool.select() → engine.mutate() → dedup → compile → scorer.scoreWithAssembly() → pool.report() → emit events`. Bottleneck is compilation (subprocesses via `Compiler` class).
 - **Candidate graph**: `Pool` manages a tree of immutable `CandidateNode`s connected by `parentId`. On score improvement, the pool **forks** — creates a new candidate + new `MutationTarget`. The parent target keeps exploring. Fork dedup tuple: `(scoreDelta, ruleId, line, column)`. Genesis never mutates in place.
 - **Rules vs guidelines**: Rules (49 built-in) are mutation plugins selected by weighted Thompson Sampling filtered by diff-type affinity. Guidelines (4 built-in) detect a `Violation`, know how to strip it, and drive `Refiner` sub-sessions that re-match while preventing re-introduction.
-- **Scoring**: `Scorer` wraps `objdiff-wasm`. `scoreWithAssembly()` returns `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in one pass. `DiffBreakdown` = insert + delete + replace + opMismatch + argMismatch.
+- **Scoring**: `Scorer` wraps `@matchkit/scoring` (objdiff-wasm, pinned; the scorer asmlift uses too). `scoreWithAssembly()` returns `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in one pass. `DiffBreakdown` = insert + delete + replace + opMismatch + argMismatch.
 - **Session report**: `SessionStore` captures `MutationSearchEvent`s, produces a `SessionReport` JSON consumed by the webapp. `RefinementStore` plays the same role for `transmuter refine`.
 - **HTTP API**: `--api` starts a Hono server on localhost with common read/control endpoints + mode-specific extras. Writes a `transmuter-control.json` discovery file. `transmuter ctl` is the client.
 
@@ -67,7 +67,6 @@ For the full design, read `.claude/docs/architecture.md`.
 ## Non-obvious gotchas
 
 - **Never mutate a `CandidateNode`.** They are immutable snapshots. Improvements create new nodes via `pool.report()` — never reach into `#candidates` and edit a field.
-- **`objdiff-wasm` init is a per-process singleton.** `scoring/scorer.ts` → `initObjdiff()` lazily loads the WASM and the result is shared across all `Scorer` / `Objdiff` instances. Don't call `initObjdiff` yourself — go through `Scorer` / `Objdiff` so they share the singleton.
 - **On ARMv4T, `op-mismatch` is never produced.** objdiff classifies every mnemonic-only diff as `replace`. `opMismatch` is effectively MIPS-only. Write tests accordingly — see the note in `packages/core/src/scoring/scorer.spec.ts`.
 - **IDO Pascal lowercases all symbol names.** `IsPowerOfTwo` → `ispoweroftwo` in the ELF. Pascal rule helpers match function names case-insensitively. Don't "fix" them to be case-sensitive.
 - **Unsized symbols span to end of section.** If a `.s` fixture lacks a `.size` directive, objdiff treats the symbol as covering everything after its label. Real ROM-extracted targets hit this — there's a regression test in `scoring/objdiff.spec.ts`.

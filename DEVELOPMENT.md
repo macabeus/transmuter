@@ -55,7 +55,7 @@ Depends on L0 only. Wraps external systems (compilers, WASM, tree-sitter).
 |--------|---------|
 | `parser.ts` | ast-grep/tree-sitter parser setup (lazy registration per language) |
 | `compiler/` | Shell-based compiler wrapper (temp dir reuse, concurrent file naming) |
-| `scoring/` | objdiff-wasm wrapper for assembly diff scoring |
+| `scoring/` | `Scorer`, the adapter over `@matchkit/scoring` |
 | `profiles/` | Compiler profile detection (agbcc, IDO, MIPS GCC, etc.) |
 
 ### L2 — Domain

@@ -2,7 +2,7 @@
 
 **Current status: no live integration.** Mizuchi and Transmuter are independent projects. The two notable overlaps:
 
-1. **Shared lineage for `Objdiff`.** `packages/core/src/scoring/objdiff.ts` carries a comment noting it was ported from Mizuchi's `src/shared/objdiff.ts`. The TypeScript is close enough that a bug fix on one side is usually applicable to the other. The scoring specs on both sides test the same behaviors (arg-mismatch classification, size=0 regression, etc.) — use the other repo as a cross-check if you suspect a regression.
+1. **Scoring.** Transmuter scores through `@matchkit/scoring`; Mizuchi still has its own objdiff wrapper (`src/shared/objdiff.ts`), which Transmuter's former `Objdiff` class was ported from. Moving Mizuchi to `@matchkit/scoring` is the planned way to make the two score alike.
 2. **Mizuchi currently wraps the Python `decomp-permuter`,** not Transmuter. `mizuchi/src/shared/decomp-permuter.ts` spawns the upstream Python process. `mizuchi/src/plugins/decomp-permuter/decomp-permuter-plugin.ts` is the Mizuchi plugin that consumes it. There is no `@transmuter/core` dependency in Mizuchi at the time of writing — `grep -r transmuter mizuchi/src` returns nothing.
 
 If the user is asking you to wire Mizuchi to Transmuter, this doc is a sketch of how the bridge would look — **not** a description of code that exists. Do not cite this as "already done."
@@ -25,21 +25,9 @@ The interesting design questions when actually building this:
 
 Until someone writes the plugin, none of the above exists in code.
 
-## Shared heritage: `Objdiff` wrapper
+## Scoring
 
-Both projects wrap `objdiff-wasm` via near-identical TypeScript:
-
-- Mizuchi: `mizuchi/src/shared/objdiff.ts` (and `objdiff-service.ts`, the singleton wrapper).
-- Transmuter: `packages/core/src/scoring/objdiff.ts` (+ `scorer.ts`, the higher-level class).
-
-If you patch one, consider porting to the other. Both implement:
-- `parseObjectFile(path, side)`
-- `runDiff(left, right)`
-- `getSymbolNames(obj)`
-- `getAssemblyFromSymbol(objDiff, name)`
-- `getDifferences(leftDiff, rightDiff, name)`
-
-The `scoring/test-utils.ts` in Transmuter and the corresponding specs in `mizuchi/src/plugins/objdiff/` test the same edge cases (size=0 absorption, arg-mismatch classification, replace-vs-op-mismatch on ARMv4T). Keep them in sync — they catch each other's regressions.
+Transmuter scores through [`@matchkit/scoring`](https://github.com/macabeus/matchkit/tree/main/packages/scoring). Mizuchi's `src/shared/objdiff.ts` (and `objdiff-service.ts`) is a separate wrapper, and it can score the same pair differently: it takes objdiff-wasm as a range (`^3.8.0`) and puts the candidate on objdiff's left side, where `@matchkit/scoring` puts the target. A Mizuchi–Transmuter bridge should score through `@matchkit/scoring` on both sides.
 
 ## If you're told to "integrate Mizuchi with Transmuter"
 
