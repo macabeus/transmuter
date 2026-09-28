@@ -126,6 +126,14 @@ describe('Scorer', () => {
     });
   });
 
+  describe('a candidate file that does not exist', () => {
+    it.each(METHODS)('%s() throws, never returns null', async (_name, call) => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      await expect(call(scorer, path.join(tempDir, 'does-not-exist.o'))).rejects.toThrow();
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // score()
   // ---------------------------------------------------------------------------
