@@ -10,7 +10,6 @@ import {
   SymbolNotFoundError,
   type Target,
   createScorer,
-  loadEngine,
 } from '@matchkit/scoring';
 import { assembly, differences, sideBySide } from '@matchkit/scoring/display';
 import fs from 'fs/promises';
@@ -53,7 +52,7 @@ export class Scorer {
 
   /** Initialize: load the engine and parse the target object once. */
   async init(): Promise<void> {
-    const scorer = createScorer(await loadEngine(), { diffSettings: this.#diffSettings });
+    const scorer = await createScorer({ diffSettings: this.#diffSettings });
     this.#target = scorer.parseTarget(new Uint8Array(await fs.readFile(this.#targetObjectPath)));
     this.#scorer = scorer;
   }
