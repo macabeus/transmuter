@@ -1,17 +1,17 @@
 /**
- * Scorer — wraps @matchkit/scoring for assembly comparison and scoring.
+ * Scorer — wraps @match-kit/scoring for assembly comparison and scoring.
  *
  * Score = instruction-level difference count between candidate and target.
  * Lower is better, 0 = perfect match.
  */
 import {
   type Inspection,
-  type Scorer as MatchkitScorer,
+  type Scorer as MatchKitScorer,
   SymbolNotFoundError,
   type Target,
   createScorer,
-} from '@matchkit/scoring';
-import { assembly, differences, sideBySide } from '@matchkit/scoring/display';
+} from '@match-kit/scoring';
+import { assembly, differences, sideBySide } from '@match-kit/scoring/display';
 import fs from 'fs/promises';
 import type { AssemblyScoreResult, DiffType, StructuredDifference } from '~/types.js';
 
@@ -41,7 +41,7 @@ export class Scorer {
   #functionName: string;
   #diffSettings: Record<string, string>;
 
-  #scorer: MatchkitScorer | null = null;
+  #scorer: MatchKitScorer | null = null;
   #target: Target | null = null;
 
   constructor(targetObjectPath: string, functionName: string, diffSettings: Record<string, string> = {}) {

@@ -2,7 +2,7 @@
 
 Fixture for the "stops the search when the scoring engine fails" test in
 `packages/core/src/search/mutation-search.spec.ts`. The objects are copied from
-@matchkit/scoring's edge fixtures.
+@match-kit/scoring's edge fixtures.
 
 ## Files
 

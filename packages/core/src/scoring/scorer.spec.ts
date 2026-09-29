@@ -1,4 +1,4 @@
-import { UndiffableError } from '@matchkit/scoring';
+import { UndiffableError } from '@match-kit/scoring';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';

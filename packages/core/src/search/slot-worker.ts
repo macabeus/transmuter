@@ -23,7 +23,7 @@
  * must point at the built slot-worker.js (shipped as a separate bundler entry
  * — see `packages/core/build.ts`).
  */
-import { EngineFailedError } from '@matchkit/scoring';
+import { EngineFailedError } from '@match-kit/scoring';
 import { Compiler } from '~/compiler/compiler.js';
 import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
 import { Deduplicator } from '~/pipeline/deduplicator.js';

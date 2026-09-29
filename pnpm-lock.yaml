@@ -75,7 +75,7 @@ importers:
       '@ast-grep/napi':
         specifier: ^0.36.0
         version: 0.36.3
-      '@matchkit/scoring':
+      '@match-kit/scoring':
         specifier: link:../../../matchkit/packages/scoring
         version: link:../../../matchkit/packages/scoring
       diff:
