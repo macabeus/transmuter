@@ -186,7 +186,8 @@ export class MutationSearch {
         return result;
       }
 
-      const initialResult = await Compiler.using(initialCompile.objPath, (obj) => scorer.scoreWithAssembly(obj));
+      await using objectFile = Compiler.objectFile(initialCompile.objPath);
+      const initialResult = await scorer.scoreWithAssembly(objectFile.path);
 
       if (initialResult === null) {
         const result: MutationSearchResult = {
@@ -281,7 +282,8 @@ export class MutationSearch {
           continue;
         }
 
-        const hypResult = await Compiler.using(hypCompile.objPath, (obj) => scorer.scoreWithAssembly(obj));
+        await using objectFile = Compiler.objectFile(hypCompile.objPath);
+        const hypResult = await scorer.scoreWithAssembly(objectFile.path);
 
         if (hypResult === null) {
           emit({ type: 'hypothesis-scored', constraintId: constraint.id, score: -1 });
@@ -473,7 +475,8 @@ export class MutationSearch {
 
     const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
     await scorer.init();
-    const scoreResult = await Compiler.using(compileResult.objPath, (obj) => scorer.scoreWithAssembly(obj));
+    await using objectFile = Compiler.objectFile(compileResult.objPath);
+    const scoreResult = await scorer.scoreWithAssembly(objectFile.path);
 
     if (scoreResult === null) {
       return null;
