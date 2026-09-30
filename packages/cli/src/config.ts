@@ -1,86 +1,31 @@
 /**
- * decomp.yaml config loader for the CLI.
- *
- * Reads the standard decomp_settings format and extracts
- * tools.transmuter configuration.
+ * `tools.transmuter`: the block Transmuter reads from a project's decomp.yaml. Finding and reading
+ * the file is @match-kit/decomp-yaml's.
  */
-import fs from 'fs/promises';
-import path from 'path';
-import YAML from 'yaml';
+import { type LoadedConfig, toolBlock } from '@match-kit/decomp-yaml';
+import * as z from 'zod';
 
-export interface TransmuterToolConfig {
-  compiler?: string;
-  profile?: string;
-  concurrency?: number;
-  maxCompiles?: number;
-  timeoutMs?: number;
-  noReduce?: boolean;
-  isolate?: boolean;
-  ruleWeights?: Record<string, number>;
-  disabledRules?: string[];
-  diffSettings?: Record<string, string>;
-  mutationDepth?: number;
-}
+/** A key the block does not name is an error, so a misspelt setting is refused instead of ignored. */
+const TRANSMUTER_TOOL = z.strictObject({
+  compiler: z.string().optional(),
+  profile: z.string().optional(),
+  concurrency: z.number().optional(),
+  maxCompiles: z.number().optional(),
+  timeoutMs: z.number().optional(),
+  noReduce: z.boolean().optional(),
+  isolate: z.boolean().optional(),
+  ruleWeights: z.record(z.string(), z.number()).optional(),
+  disabledRules: z.array(z.string()).optional(),
+  diffSettings: z.record(z.string(), z.string()).optional(),
+  mutationDepth: z.number().optional(),
+});
 
-export interface DecompYamlConfig {
-  name?: string;
-  platform?: string;
-  versions?: Array<{
-    name: string;
-    paths?: {
-      target?: string;
-      build_dir?: string;
-      map?: string;
-      asm?: string;
-      nonmatchings?: string;
-    };
-  }>;
-  tools?: {
-    transmuter?: TransmuterToolConfig;
-    [key: string]: unknown;
-  };
-}
+export type TransmuterToolConfig = z.output<typeof TRANSMUTER_TOOL>;
 
 /**
- * Walk up from startDir to find decomp.yaml.
- * Returns the parsed config or null if not found.
+ * `tools.transmuter` of `loaded`, checked; `undefined` when there is no config or no block. Throws
+ * `DecompYamlError` naming each key of the wrong type and each key Transmuter does not know.
  */
-export async function loadDecompYaml(explicitPath?: string, startDir?: string): Promise<DecompYamlConfig | null> {
-  if (explicitPath) {
-    return readDecompYaml(explicitPath);
-  }
-
-  let dir = startDir ? path.resolve(startDir) : process.cwd();
-
-  while (true) {
-    const candidate = path.join(dir, 'decomp.yaml');
-    try {
-      await fs.access(candidate);
-      return readDecompYaml(candidate);
-    } catch {
-      // Not found, try parent
-    }
-
-    // Also try decomp.yml
-    const candidate2 = path.join(dir, 'decomp.yml');
-    try {
-      await fs.access(candidate2);
-      return readDecompYaml(candidate2);
-    } catch {
-      // Not found, try parent
-    }
-
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      break;
-    } // Reached filesystem root
-    dir = parent;
-  }
-
-  return null;
-}
-
-async function readDecompYaml(filePath: string): Promise<DecompYamlConfig> {
-  const content = await fs.readFile(filePath, 'utf-8');
-  return YAML.parse(content) as DecompYamlConfig;
+export function transmuterBlock(loaded: LoadedConfig | null): TransmuterToolConfig | undefined {
+  return toolBlock(loaded, 'transmuter', TRANSMUTER_TOOL);
 }
