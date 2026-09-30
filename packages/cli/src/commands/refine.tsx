@@ -1,6 +1,7 @@
 /**
  * `transmuter refine` command — improve code quality while preserving assembly match.
  */
+import { loadDecompYaml } from '@match-kit/decomp-yaml/files';
 import {
   Cleanup,
   type CleanupEvent,
@@ -24,7 +25,7 @@ import path from 'path';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { type ControlServer, createControlServer, createRefineApp } from '../api/server.js';
-import { loadDecompYaml } from '../config.js';
+import { transmuterBlock } from '../config.js';
 
 export interface RefineArgs {
   sourceFile: string;
@@ -212,8 +213,7 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
   const source = await fs.readFile(args.sourceFile, 'utf-8');
   const language = detectLanguage(args.sourceFile);
   ensureLanguageRegistered(language);
-  const decompConfig = await loadDecompYaml(args.config, args.cwd);
-  const transmuterConfig = decompConfig?.tools?.transmuter;
+  const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
 
   const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
   const fnName = args.function ?? '';
@@ -583,8 +583,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const decompConfig = await loadDecompYaml(args.config, args.cwd);
-        const transmuterConfig = decompConfig?.tools?.transmuter;
+        const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
 
         const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
         if (!compilerCommand) {

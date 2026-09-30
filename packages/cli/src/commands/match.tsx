@@ -1,6 +1,7 @@
 /**
  * `transmuter match` command — main permutation command with live dashboard.
  */
+import { loadDecompYaml } from '@match-kit/decomp-yaml/files';
 import {
   Cleanup,
   type CleanupEvent,
@@ -22,7 +23,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 import { type ControlServer, createControlServer, createMatchApp } from '../api/server.js';
 import { type CliState, initialState, reduceEvent } from '../bridge.js';
-import { loadDecompYaml } from '../config.js';
+import { transmuterBlock } from '../config.js';
 
 export interface MatchArgs {
   sourceFile: string;
@@ -331,8 +332,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const decompConfig = await loadDecompYaml(args.config, args.cwd);
-        const transmuterConfig = decompConfig?.tools?.transmuter;
+        const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
 
         const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
         if (!compilerCommand) {
