@@ -114,6 +114,7 @@ export class SlotOrchestrator {
   #mutationDepth: number;
   #nextJobId = 0;
   #stopped = false;
+  #engineFailure: string | null = null;
   #runResolve: (() => void) | null = null;
   #stopTimer: ReturnType<typeof setTimeout> | null = null;
   #lastRebroadcastIteration = 0;
@@ -235,6 +236,11 @@ export class SlotOrchestrator {
    */
   getCompileAttempts(): number {
     return this.#slotStats.compiled + this.#slotStats.errors + this.#slotStats.scorerFailures;
+  }
+
+  /** The error of the scoring-engine failure that stopped the search, or null. */
+  getEngineFailure(): string | null {
+    return this.#engineFailure;
   }
 
   getElapsed(): number {
@@ -575,6 +581,14 @@ export class SlotOrchestrator {
           ruleId: result.ruleId,
           error: result.error,
         });
+        return;
+      }
+      case 'engine-failed': {
+        // Every later candidate would fail the same way, so the search stops.
+        this.#slotStats.scorerFailures++;
+        this.#engineFailure = result.error;
+        this.#stopped = true;
+        this.#emit({ type: 'error', message: `the scoring engine failed; stopping the search: ${result.error}` });
         return;
       }
       case 'scored': {

@@ -127,6 +127,11 @@ export class Compiler {
     await fs.unlink(objPath).catch(() => {});
   }
 
+  /** A compiled object file, removed when the `await using` that holds it ends. */
+  static objectFile(objPath: string): AsyncDisposable & { readonly path: string } {
+    return { path: objPath, [Symbol.asyncDispose]: () => Compiler.cleanup(objPath) };
+  }
+
   /** Remove the shared temp directory. Called on shutdown. */
   async destroy(): Promise<void> {
     // Wait for any in-flight compiles before wiping the tmp dir from under them.

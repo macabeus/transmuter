@@ -440,8 +440,8 @@ export class Refiner {
         throw new Error(`Sanity check failed: source does not compile: ${initialCompile.error}`);
       }
 
-      const initialScore = await scorer.score(initialCompile.objPath);
-      await Compiler.cleanup(initialCompile.objPath);
+      await using objectFile = Compiler.objectFile(initialCompile.objPath);
+      const initialScore = await scorer.score(objectFile.path);
 
       if (initialScore === null) {
         emit({ type: 'sanity-check-failed', score: -1, error: `Function '${this.#opts.functionName}' not found` });
@@ -712,8 +712,8 @@ export class Refiner {
         };
       }
 
-      const scoreAfterRemoval = await scorer.score(compileResult.objPath);
-      await Compiler.cleanup(compileResult.objPath);
+      await using objectFile = Compiler.objectFile(compileResult.objPath);
+      const scoreAfterRemoval = await scorer.score(objectFile.path);
 
       if (scoreAfterRemoval === null) {
         emit({
@@ -1106,8 +1106,8 @@ export class Refiner {
 
       const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
       await scorer.init();
-      const score = await scorer.score(result.objPath);
-      await Compiler.cleanup(result.objPath);
+      await using objectFile = Compiler.objectFile(result.objPath);
+      const score = await scorer.score(objectFile.path);
       return score;
     } finally {
       await compiler.destroy();

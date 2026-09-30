@@ -1,10 +1,18 @@
+import { UndiffableError } from '@match-kit/scoring';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { Scorer } from './scorer.js';
-import { ARM_DIFF_SETTINGS, armThumbAsm, assembleArmThumb, ensureArmToolchain, thumbFunc } from './test-utils.js';
+import {
+  ARM_DIFF_SETTINGS,
+  armThumbAsm,
+  assembleArmThumb,
+  ensureArmToolchain,
+  thumbFunc,
+  unsizedThumbFunc,
+} from './test-utils.js';
 
 describe('Scorer', () => {
   let tempDir: string;
@@ -13,6 +21,10 @@ describe('Scorer', () => {
   let subOnePath: string;
   let addOneTwicePath: string;
   let renamedPath: string;
+  let unsizedTargetPath: string;
+  let boundedCandidatePath: string;
+  let multiPath: string;
+  let undecodablePath: string;
 
   beforeAll(async () => {
     ensureArmToolchain();
@@ -41,6 +53,43 @@ describe('Scorer', () => {
       'renamed',
       armThumbAsm(thumbFunc('something_else', ['add r0, #1', 'bx lr'])),
     );
+    // The target's `F` has no `.size` directive, so ELF reports its size as 0
+    // and objdiff extends it to the end of the section, absorbing the four
+    // trailing instructions.
+    unsizedTargetPath = await assembleArmThumb(
+      tempDir,
+      'unsized_target',
+      armThumbAsm(
+        [
+          unsizedThumbFunc('F', ['add r0, #1', 'bx lr']),
+          '\tmov r0, r1',
+          '\tlsl r0, r0, #2',
+          '\tadd r0, #5',
+          '\tbx lr',
+        ].join('\n'),
+      ),
+    );
+    boundedCandidatePath = await assembleArmThumb(
+      tempDir,
+      'bounded_candidate',
+      armThumbAsm(thumbFunc('F', ['add r0, #1', 'bx lr'])),
+    );
+    multiPath = await assembleArmThumb(
+      tempDir,
+      'multi',
+      armThumbAsm(
+        [thumbFunc('add_one', ['add r0, #1', 'bx lr']), '', thumbFunc('mul_two', ['lsl r0, r0, #1', 'bx lr'])].join(
+          '\n',
+        ),
+      ),
+    );
+    // 0xe800 is half of a 32-bit Thumb-2 instruction, which ARMv4T lacks: objdiff shows it as
+    // `<illegal>` and diffs it against itself as `none`.
+    undecodablePath = await assembleArmThumb(
+      tempDir,
+      'undecodable',
+      armThumbAsm(thumbFunc('F', ['add r0, #1', '.inst.n 0xe800', 'bx lr'])),
+    );
   });
 
   afterAll(async () => {
@@ -53,14 +102,35 @@ describe('Scorer', () => {
   // init()
   // ---------------------------------------------------------------------------
 
+  const METHODS = [
+    ['score', (s: Scorer, p: string) => s.score(p)],
+    ['scoreWithAssembly', (s: Scorer, p: string) => s.scoreWithAssembly(p)],
+    ['assemblyDiff', (s: Scorer, p: string) => s.assemblyDiff(p)],
+    ['report', (s: Scorer, p: string) => s.report(p)],
+  ] as const;
+
   describe('init()', () => {
-    it.each([
-      ['score', (s: Scorer, p: string) => s.score(p)],
-      ['scoreWithAssembly', (s: Scorer, p: string) => s.scoreWithAssembly(p)],
-      ['assemblyDiff', (s: Scorer, p: string) => s.assemblyDiff(p)],
-    ] as const)('throws from %s() when init() has not been called', async (_name, call) => {
+    it.each(METHODS)('throws from %s() when init() has not been called', async (_name, call) => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await expect(call(scorer, addOnePath)).rejects.toThrow(/not initialized/);
+    });
+  });
+
+  describe('a function missing from the candidate', () => {
+    it.each(METHODS)('%s() returns null', async (_name, call) => {
+      // Target has `add_one`, candidate only has `something_else` — the
+      // realistic regression case (LLM renamed the function by mistake).
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      expect(await call(scorer, renamedPath)).toBeNull();
+    });
+  });
+
+  describe('a candidate file that does not exist', () => {
+    it.each(METHODS)('%s() throws, never returns null', async (_name, call) => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      await expect(call(scorer, path.join(tempDir, 'does-not-exist.o'))).rejects.toThrow();
     });
   });
 
@@ -89,14 +159,6 @@ describe('Scorer', () => {
       const score = await scorer.score(addOneTwicePath);
       expect(score).not.toBeNull();
       expect(score!).toBeGreaterThan(0);
-    });
-
-    it('returns null when the function is missing from the candidate', async () => {
-      // Target has `add_one`, candidate only has `something_else` — the
-      // realistic regression case (LLM renamed the function by mistake).
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.score(renamedPath)).toBeNull();
     });
   });
 
@@ -184,12 +246,6 @@ describe('Scorer', () => {
       expect(result!.breakdown.insert + result!.breakdown.delete).toBeGreaterThan(0);
     });
 
-    it('returns null when the function symbol is missing from the candidate', async () => {
-      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
-      await scorer.init();
-      expect(await scorer.scoreWithAssembly(renamedPath)).toBeNull();
-    });
-
     it('its `.score` field matches what score() returns for the same candidate', async () => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
@@ -212,8 +268,7 @@ describe('Scorer', () => {
       const diff = await scorer.assemblyDiff(addOnePath);
 
       expect(diff).not.toBeNull();
-      expect(diff!).toContain('candidate');
-      expect(diff!).toContain('target');
+      expect(diff!.split('\n')[0]).toMatch(/^target\s+candidate$/);
       // The diff-kind marker — only present when a row actually differs.
       expect(diff!.includes('| ')).toBe(false);
     });
@@ -225,11 +280,70 @@ describe('Scorer', () => {
       expect(diff).not.toBeNull();
       expect(diff!).toContain('| ');
     });
+  });
+  // ---------------------------------------------------------------------------
+  // report()
+  // ---------------------------------------------------------------------------
 
-    it('returns null when the function is missing from the candidate', async () => {
+  describe('report()', () => {
+    it('reports zero differences and every row matching for two identical objects', async () => {
       const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
       await scorer.init();
-      expect(await scorer.assemblyDiff(renamedPath)).toBeNull();
+      const report = await scorer.report(addOnePath);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(0);
+      // Fixture has exactly two instructions — `add r0, #1` and `bx lr`.
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.differences).toEqual([]);
+      expect(report!.structuredDifferences).toEqual([]);
+      expect(report!.assembly).toBe(report!.targetAssembly);
+    });
+
+    it('classifies a single immediate change as argMismatch, with both sides’ text', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(addImm2Path);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(report!.structuredDifferences.length);
+      const argDiff = report!.structuredDifferences.find((d) => d.type === 'argMismatch');
+      expect(argDiff).toBeDefined();
+      expect(argDiff!.targetInstruction).toMatch(/0x1/);
+      expect(argDiff!.candidateInstruction).toMatch(/0x2/);
+      const joined = report!.differences.join('\n');
+      expect(joined).toContain('Difference 1 (ARGUMENT_MISMATCH):');
+      expect(joined).toContain('Current:');
+      expect(joined).toContain('Target:');
+    });
+
+    it('detects absorbed instructions when the target symbol has size=0', async () => {
+      // The target's unsized `F` absorbs the next function's four
+      // instructions, which count as differences.
+      const scorer = new Scorer(unsizedTargetPath, 'F', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(boundedCandidatePath);
+
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.differenceCount).toBe(4);
+    });
+
+    it('reports only the rows of the requested symbol', async () => {
+      const scorer = new Scorer(addOnePath, 'add_one', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      const report = await scorer.report(multiPath);
+
+      expect(report).not.toBeNull();
+      expect(report!.differenceCount).toBe(0);
+      expect(report!.matchingCount).toBe(2);
+      expect(report!.assembly).not.toMatch(/lsl/);
+    });
+
+    it('throws, never scores, when a row decodes on neither side', async () => {
+      const scorer = new Scorer(undecodablePath, 'F', ARM_DIFF_SETTINGS);
+      await scorer.init();
+      await expect(scorer.score(undecodablePath)).rejects.toThrow(UndiffableError);
+      await expect(scorer.report(undecodablePath)).rejects.toThrow(/does not decode as an instruction/);
     });
   });
 });

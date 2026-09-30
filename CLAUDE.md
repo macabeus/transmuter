@@ -47,7 +47,7 @@ CLI commands: `match`, `refine`, `profile-detect`, `ctl`. There is no standalone
 - **Core pipeline**: `MutationSearch` runs N concurrent slots. Each slot loop = `pool.select() → engine.mutate() → dedup → compile → scorer.scoreWithAssembly() → pool.report() → emit events`. Bottleneck is compilation (subprocesses via `Compiler` class).
 - **Candidate graph**: `Pool` manages a tree of immutable `CandidateNode`s connected by `parentId`. On score improvement, the pool **forks** — creates a new candidate + new `MutationTarget`. The parent target keeps exploring. Fork dedup tuple: `(scoreDelta, ruleId, line, column)`. Genesis never mutates in place.
 - **Rules vs guidelines**: Rules (49 built-in) are mutation plugins selected by weighted Thompson Sampling filtered by diff-type affinity. Guidelines (4 built-in) detect a `Violation`, know how to strip it, and drive `Refiner` sub-sessions that re-match while preventing re-introduction.
-- **Scoring**: `Scorer` wraps `objdiff-wasm`. `scoreWithAssembly()` returns `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in one pass. `DiffBreakdown` = insert + delete + replace + opMismatch + argMismatch.
+- **Scoring**: `Scorer` wraps `@match-kit/scoring` (a pinned objdiff-wasm, shared with asmlift). `scoreWithAssembly()` returns `{ score, breakdown: DiffBreakdown, assembly, assemblyDiff }` in one pass. `DiffBreakdown` = insert + delete + replace + opMismatch + argMismatch.
 - **Session report**: `SessionStore` captures `MutationSearchEvent`s, produces a `SessionReport` JSON consumed by the webapp. `RefinementStore` plays the same role for `transmuter refine`.
 - **HTTP API**: `--api` starts a Hono server on localhost with common read/control endpoints + mode-specific extras. Writes a `transmuter-control.json` discovery file. `transmuter ctl` is the client.
 
@@ -67,10 +67,9 @@ For the full design, read `.claude/docs/architecture.md`.
 ## Non-obvious gotchas
 
 - **Never mutate a `CandidateNode`.** They are immutable snapshots. Improvements create new nodes via `pool.report()` — never reach into `#candidates` and edit a field.
-- **`objdiff-wasm` init is a per-process singleton.** `scoring/scorer.ts` → `initObjdiff()` lazily loads the WASM and the result is shared across all `Scorer` / `Objdiff` instances. Don't call `initObjdiff` yourself — go through `Scorer` / `Objdiff` so they share the singleton.
 - **On ARMv4T, `op-mismatch` is never produced.** objdiff classifies every mnemonic-only diff as `replace`. `opMismatch` is effectively MIPS-only. Write tests accordingly — see the note in `packages/core/src/scoring/scorer.spec.ts`.
 - **IDO Pascal lowercases all symbol names.** `IsPowerOfTwo` → `ispoweroftwo` in the ELF. Pascal rule helpers match function names case-insensitively. Don't "fix" them to be case-sensitive.
-- **Unsized symbols span to end of section.** If a `.s` fixture lacks a `.size` directive, objdiff treats the symbol as covering everything after its label. Real ROM-extracted targets hit this — there's a regression test in `scoring/objdiff.spec.ts`.
+- **Unsized symbols span to end of section.** If a `.s` fixture lacks a `.size` directive, objdiff treats the symbol as covering everything after its label. Real ROM-extracted targets hit this — there's a regression test in `scoring/scorer.spec.ts` (`report()`).
 - **Refine "exhausted" ≠ "impossible".** Phase-1 sub-searches cap at `maxUnproductiveIterations: 100_000` — if the `candidateFilter` rejects every mutation for that long, the violation transitions to `'transmuter-exhausted'`. Bump the limit before concluding that a violation can't be fixed.
 - **Auto-compact silently summarizes dead branches into `SuperNode`s.** If you expect to find a specific candidate by ID and it's gone, check `store.getGraph().superNodes` — it may have been compacted. Disable with `autoCompact: false`.
 - **`transmuter dev` wants core built first.** The CLI's `predev` hook runs `@transmuter/core`'s `build:esm`. If you edit core and run the CLI with `pnpm start`, you're running the stale `dist/`. Use `pnpm --filter @transmuter/cli run dev` or rebuild core explicitly.
@@ -91,4 +90,4 @@ All topic docs live in `.claude/docs/`. Read on-demand.
 - [webapp.md](.claude/docs/webapp.md) — React+Vite structure, `@xyflow/react` graph, how report JSON flows in, dev-server data injection. **Read when:** adding a view, tweaking the graph, or shipping a new report field.
 - [testing.md](.claude/docs/testing.md) — Vitest layout, the real-compiler philosophy, `test-utils.ts` helpers, how to add a fixture test. **Read when:** adding tests or fixing a flaky one.
 - [cleanup-and-reduce.md](.claude/docs/cleanup-and-reduce.md) — two-phase cleanup (canonicalize + smell permute) and the library-only reducer. **Read when:** changing smell scoring or touching canonicalizer passes.
-- [mizuchi-integration.md](.claude/docs/mizuchi-integration.md) — current state of Mizuchi ↔ Transmuter (mostly aspirational — only the objdiff wrapper is ported). **Read when:** wiring Mizuchi to consume Transmuter as a plugin.
+- [mizuchi-integration.md](.claude/docs/mizuchi-integration.md) — current state of Mizuchi ↔ Transmuter (aspirational — no integration exists yet). **Read when:** wiring Mizuchi to consume Transmuter as a plugin.

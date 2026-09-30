@@ -75,12 +75,12 @@ importers:
       '@ast-grep/napi':
         specifier: ^0.36.0
         version: 0.36.3
+      '@match-kit/scoring':
+        specifier: 0.1.0
+        version: 0.1.0
       diff:
         specifier: ^8.0.4
         version: 8.0.4
-      objdiff-wasm:
-        specifier: ^3.0.0
-        version: 3.7.1
       tree-sitter-c:
         specifier: ^0.21.4
         version: 0.21.4
@@ -688,6 +688,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@match-kit/scoring@0.1.0':
+    resolution: {integrity: sha512-SkL9rBsG3MFwEOQfS302UxH5hazVCKGsmwHJdUjfhyBVMHjSj/6fM+W32LgX71hsNWUBJMSWxIFXDkQ8BqnB8w==}
+    engines: {node: '>=24'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -1729,8 +1733,8 @@ packages:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
     engines: {node: '>=0.10.0'}
 
-  objdiff-wasm@3.7.1:
-    resolution: {integrity: sha512-GAwmDfnqjbuLnxXbB64Bk1tpVYEWrkjDSbFxRTlS3u+dmcAH25DJqkaeJU9AJjXPNulfkte9HmZjE3mqmx3z7g==}
+  objdiff-wasm@3.8.1:
+    resolution: {integrity: sha512-qrPEvEltuYtvjqkCT3YbttzUFPfKqPJw4xNMQLwuyKNwpNxV0i9RJLbozzJ0LDJ5HEocmkoqHchSrGHszS+KUw==}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -2773,6 +2777,10 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@match-kit/scoring@0.1.0':
+    dependencies:
+      objdiff-wasm: 3.8.1
+
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
       '@nodelib/fs.stat': 2.0.5
@@ -3814,7 +3822,7 @@ snapshots:
 
   normalize-path@3.0.0: {}
 
-  objdiff-wasm@3.7.1: {}
+  objdiff-wasm@3.8.1: {}
 
   object-assign@4.1.1: {}
 

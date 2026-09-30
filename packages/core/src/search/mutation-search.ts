@@ -22,8 +22,7 @@ import { Rng } from '~/rng.js';
 import { AdaptiveSelector } from '~/rules/adaptive-selector.js';
 import { builtInRules } from '~/rules/built-in/index.js';
 import { RuleRegistry } from '~/rules/registry.js';
-import { Objdiff } from '~/scoring/objdiff.js';
-import { Scorer } from '~/scoring/scorer.js';
+import { type DiffReport, Scorer } from '~/scoring/scorer.js';
 import { pickAutoCompactTargets } from '~/search/auto-compact.js';
 import { SlotOrchestrator } from '~/search/slot-orchestrator.js';
 import type {
@@ -36,7 +35,6 @@ import type {
   MutationSearchResult,
   MutationSearchState,
   MutationTarget,
-  StructuredDifference,
 } from '~/types.js';
 
 const DEFAULT_STATS_INTERVAL = 100;
@@ -188,8 +186,8 @@ export class MutationSearch {
         return result;
       }
 
-      const initialResult = await scorer.scoreWithAssembly(initialCompile.objPath);
-      await Compiler.cleanup(initialCompile.objPath);
+      await using objectFile = Compiler.objectFile(initialCompile.objPath);
+      const initialResult = await scorer.scoreWithAssembly(objectFile.path);
 
       if (initialResult === null) {
         const result: MutationSearchResult = {
@@ -284,8 +282,8 @@ export class MutationSearch {
           continue;
         }
 
-        const hypResult = await scorer.scoreWithAssembly(hypCompile.objPath);
-        await Compiler.cleanup(hypCompile.objPath);
+        await using objectFile = Compiler.objectFile(hypCompile.objPath);
+        const hypResult = await scorer.scoreWithAssembly(objectFile.path);
 
         if (hypResult === null) {
           emit({ type: 'hypothesis-scored', constraintId: constraint.id, score: -1 });
@@ -394,7 +392,7 @@ export class MutationSearch {
       let reason: MutationSearchResult['reason'];
       if (best.score === 0) {
         reason = 'perfect-match';
-      } else if (this.#abortController.signal.aborted) {
+      } else if (this.#abortController.signal.aborted || this.#orchestrator.getEngineFailure() !== null) {
         reason = 'aborted';
       } else if (
         this.#opts.maxCompiles !== undefined &&
@@ -477,8 +475,8 @@ export class MutationSearch {
 
     const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
     await scorer.init();
-    const scoreResult = await scorer.scoreWithAssembly(compileResult.objPath);
-    await Compiler.cleanup(compileResult.objPath);
+    await using objectFile = Compiler.objectFile(compileResult.objPath);
+    const scoreResult = await scorer.scoreWithAssembly(objectFile.path);
 
     if (scoreResult === null) {
       return null;
@@ -538,15 +536,7 @@ export class MutationSearch {
    * Compile source and return assembly + objdiff comparison against the target.
    * Returns null if compilation fails or the function is not found.
    */
-  async getAssemblyDiff(source: string): Promise<{
-    assembly: string;
-    targetAssembly: string;
-    diff: string;
-    differences: string[];
-    structuredDifferences: StructuredDifference[];
-    differenceCount: number;
-    matchingCount: number;
-  } | null> {
+  async getAssemblyDiff(source: string): Promise<DiffReport | null> {
     const compiler = new Compiler({
       command: this.#opts.compilerCommand,
       cwd: this.#opts.cwd,
@@ -561,37 +551,9 @@ export class MutationSearch {
     }
 
     try {
-      const objdiff = new Objdiff(this.#opts.diffSettings);
-      const candidateObj = await objdiff.parseObjectFile(compileResult.objPath, 'base');
-      const targetObj = await objdiff.parseObjectFile(this.#opts.targetObjectPath, 'target');
-      const diffResult = await objdiff.runDiff(candidateObj, targetObj);
-
-      if (!diffResult.left || !diffResult.right) {
-        return null;
-      }
-
-      const assembly = await objdiff.getAssemblyFromSymbol(diffResult.left, this.#opts.functionName);
-      const targetAssembly = await objdiff.getAssemblyFromSymbol(diffResult.right, this.#opts.functionName);
-      const { differenceCount, matchingCount, differences, structuredDifferences } = await objdiff.getDifferences(
-        diffResult.left,
-        diffResult.right,
-        this.#opts.functionName,
-      );
-
-      // Also produce the side-by-side diff via Scorer for backward compat
       const scorer = new Scorer(this.#opts.targetObjectPath, this.#opts.functionName, this.#opts.diffSettings);
       await scorer.init();
-      const sideBySide = await scorer.assemblyDiff(compileResult.objPath);
-
-      return {
-        assembly,
-        targetAssembly,
-        diff: sideBySide ?? '',
-        differences,
-        structuredDifferences,
-        differenceCount,
-        matchingCount,
-      };
+      return await scorer.report(compileResult.objPath);
     } finally {
       await Compiler.cleanup(compileResult.objPath);
     }

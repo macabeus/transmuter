@@ -23,6 +23,7 @@
  * must point at the built slot-worker.js (shipped as a separate bundler entry
  * — see `packages/core/build.ts`).
  */
+import { EngineFailedError } from '@match-kit/scoring';
 import { Compiler } from '~/compiler/compiler.js';
 import { clearParseCache, ensureLanguageRegistered } from '~/parser.js';
 import { Deduplicator } from '~/pipeline/deduplicator.js';
@@ -256,6 +257,7 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   let scored: Awaited<ReturnType<typeof s.scorer.scoreWithAssembly>>;
   let scoreMs: number;
   let scoreError: string | null = null;
+  let engineFailed = false;
   // try/finally guarantees Compiler.cleanup runs even if scoreWithAssembly
   // throws — without this, every scorer crash leaks the .o until the
   // worker shuts down and wipes the whole tmp dir.
@@ -264,9 +266,31 @@ async function handleJob(job: WorkerJob, s: WorkerState): Promise<void> {
   } catch (err) {
     scored = null;
     scoreError = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    engineFailed = err instanceof EngineFailedError;
   } finally {
     scoreMs = performance.now() - tScore0;
     await Compiler.cleanup(compileResult.objPath);
+  }
+
+  if (engineFailed) {
+    // The engine died: reported apart from 'scorer-failed', so the orchestrator
+    // stops the search.
+    post({
+      kind: 'engine-failed',
+      jobId: job.jobId,
+      mutationTargetId: job.mutationTargetId,
+      ruleId,
+      error: scoreError ?? 'the scoring engine failed',
+      timings: {
+        mutate: mutateMs,
+        parse: parseMs,
+        ruleApply: ruleApplyMs,
+        dedup: dedupMs,
+        compile: compileMs,
+        score: scoreMs,
+      },
+    });
+    return;
   }
 
   if (!scored) {
