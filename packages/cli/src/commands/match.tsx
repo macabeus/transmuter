@@ -1,7 +1,7 @@
 /**
  * `transmuter match` command — main permutation command with live dashboard.
  */
-import { findDecompYaml, loadDecompYaml } from '@match-kit/decomp-yaml/files';
+import { loadDecompYaml, searchDecompYaml } from '@match-kit/decomp-yaml/files';
 import {
   Cleanup,
   type CleanupEvent,
@@ -331,7 +331,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const loaded = loadDecompYaml(args.config ?? findDecompYaml(args.cwd));
+        const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
         const transmuterConfig = transmuterBlock(loaded);
         // Compile where the decomp.yaml is, as its template's relative paths expect.
         const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();

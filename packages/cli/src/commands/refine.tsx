@@ -1,7 +1,7 @@
 /**
  * `transmuter refine` command — improve code quality while preserving assembly match.
  */
-import { findDecompYaml, loadDecompYaml } from '@match-kit/decomp-yaml/files';
+import { loadDecompYaml, searchDecompYaml } from '@match-kit/decomp-yaml/files';
 import {
   Cleanup,
   type CleanupEvent,
@@ -213,7 +213,7 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
   const source = await fs.readFile(args.sourceFile, 'utf-8');
   const language = detectLanguage(args.sourceFile);
   ensureLanguageRegistered(language);
-  const loaded = loadDecompYaml(args.config ?? findDecompYaml(args.cwd));
+  const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
   const transmuterConfig = transmuterBlock(loaded);
   // Compile where the decomp.yaml is, as its template's relative paths expect.
   const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();
@@ -586,7 +586,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const loaded = loadDecompYaml(args.config ?? findDecompYaml(args.cwd));
+        const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
         const transmuterConfig = transmuterBlock(loaded);
         // Compile where the decomp.yaml is, as its template's relative paths expect.
         const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();

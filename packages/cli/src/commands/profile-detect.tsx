@@ -5,7 +5,7 @@
  * detects the compiler profile, and displays a decision tree showing why
  * a particular profile was selected, followed by the rule table.
  */
-import { findDecompYaml, loadDecompYaml } from '@match-kit/decomp-yaml/files';
+import { loadDecompYaml, searchDecompYaml } from '@match-kit/decomp-yaml/files';
 import { type Language, type ProfileTrace, type ResolvedRule, getProfile, getRuleWeights } from '@transmuter/core';
 import { Box, Text, render } from 'ink';
 import React from 'react';
@@ -294,7 +294,7 @@ function ProfileDetectApp({
 }
 
 export async function profileDetectCommand(args: ProfileDetectArgs): Promise<void> {
-  const loaded = loadDecompYaml(args.config ?? findDecompYaml(args.cwd));
+  const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
   const transmuterConfig = transmuterBlock(loaded);
 
   const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
