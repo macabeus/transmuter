@@ -41,7 +41,6 @@ export interface MatchArgs {
   depth?: number;
   noCleanup?: boolean;
   config?: string;
-  version?: string;
   sourcePrefix?: string;
   api?: boolean;
   apiPort?: number;

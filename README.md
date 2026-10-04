@@ -191,7 +191,6 @@ transmuter match base.pas \
 | `--isolate`               | Replace non-target, non-inline function bodies with forward declarations before reduce/match — useful on preprocessed `.ctx` files (macros are preserved) |
 | `--no-cleanup`            | Skip cleanup after finding a match (do not remove temp vars, unnecessary casts)                                     |
 | `--config <path>`         | Explicit path to `decomp.yaml`                                                                                      |
-| `--version <name>`        | Version name for multi-version projects (selects the matching `versions[]` entry in `decomp.yaml`)                  |
 | `--source-prefix <path>`  | File whose contents are prepended to every compiled candidate (typically `context.h`)                               |
 | `--constraints <path>`    | JSON file with `focusConstraints` (focus-region, avoid-region, hypothesis) to bias mutation selection               |
 | `--api`                   | Start HTTP control server for external access                                                                       |

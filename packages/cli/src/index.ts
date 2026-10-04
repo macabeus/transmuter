@@ -47,7 +47,6 @@ Match Options:
   --depth <n>          Mutations per iteration (default: 1)
   --no-cleanup         Skip cleanup after finding a match
   --config <path>      Path to decomp.yaml
-  --version <name>     Version name for multi-version projects
   --api                Start HTTP control server for external access
   --api-port <n>       Fixed port for the API server (default: random)
   --constraints <path> JSON file with focusConstraints (focus-region,
@@ -113,7 +112,6 @@ async function main(): Promise<void> {
           depth: { type: 'string' },
           'no-cleanup': { type: 'boolean' },
           config: { type: 'string' },
-          version: { type: 'string' },
           'source-prefix': { type: 'string' },
           api: { type: 'boolean' },
           'api-port': { type: 'string' },
@@ -150,7 +148,6 @@ async function main(): Promise<void> {
         depth: values.depth ? Number(values.depth) : undefined,
         noCleanup: values['no-cleanup'],
         config: values.config,
-        version: values.version,
         sourcePrefix: values['source-prefix']
           ? await import('fs/promises').then((fs) => fs.readFile(values['source-prefix']!, 'utf-8'))
           : undefined,
