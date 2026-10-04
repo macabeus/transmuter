@@ -6,7 +6,7 @@ import { transmuterBlock } from './config.js';
 const loaded = (text: string): LoadedConfig => ({
   path: '/p/decomp.yaml',
   dir: '/p',
-  config: parseDecompYaml(text, '/p/decomp.yaml'),
+  config: parseDecompYaml(`name: Example\nplatform: gba\nversions: []\n${text}`, '/p/decomp.yaml'),
 });
 
 describe('transmuterBlock', () => {
@@ -45,7 +45,7 @@ describe('transmuterBlock', () => {
 
   it('returns undefined when there is no decomp.yaml or no tools.transmuter', () => {
     expect(transmuterBlock(null)).toBeUndefined();
-    expect(transmuterBlock(loaded('platform: gba\ntools:\n  asmlift: {}\n'))).toBeUndefined();
+    expect(transmuterBlock(loaded('tools:\n  asmlift: {}\n'))).toBeUndefined();
   });
 
   it('refuses a setting of the wrong type and a setting it does not know, naming each', () => {

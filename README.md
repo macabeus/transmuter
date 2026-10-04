@@ -69,11 +69,19 @@ bun tools/transmuter/packages/cli/dist/index.js match ...
 
 The rest of this README writes `transmuter ...` for brevity. Substitute `bun tools/transmuter/packages/cli/dist/index.js ...` when you run it.
 
-4. Add a `tools.transmuter` section to your [`decomp.yaml`](https://github.com/ethteck/decomp_settings) with the compiler command and optional flags. Example for a GBA project using `agbcc`:
+4. Add a `tools.transmuter` section to your [`decomp.yaml`](https://github.com/ethteck/decomp_settings) with the compiler command and optional flags. The file must meet the decomp_settings spec: `name`, `platform`, and each version with its `fullname` and its `target`, `build_dir`, `map` and `compiled_target` paths. Example for a GBA project using `agbcc`:
 
 ```yaml
+name: My Project
 platform: gba
-# ...
+versions:
+  - name: us
+    fullname: US
+    paths:
+      target: baserom.gba
+      build_dir: build
+      map: my-project.map
+      compiled_target: my-project.gba
 tools:
   transmuter:
     # Shell command template for compiling a candidate source.
