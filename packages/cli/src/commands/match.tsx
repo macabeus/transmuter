@@ -332,7 +332,10 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
+        const loaded = loadDecompYaml(args.config, args.cwd);
+        const transmuterConfig = transmuterBlock(loaded);
+        // Compile where the decomp.yaml is, as its template's relative paths expect.
+        const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();
 
         const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
         if (!compilerCommand) {
@@ -398,7 +401,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
-            cwd: args.cwd ?? process.cwd(),
+            cwd: compileCwd,
             sourcePrefix: args.sourcePrefix,
           });
           const result = await reducer.reduce();
@@ -449,7 +452,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           functionName: fnName,
           targetObjectPath: targetPath,
           compilerCommand,
-          cwd: args.cwd ?? process.cwd(),
+          cwd: compileCwd,
           profile: resolvedProfile,
           concurrency,
           maxCompiles,
@@ -505,7 +508,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
-            cwd: args.cwd ?? process.cwd(),
+            cwd: compileCwd,
             sourcePrefix: args.sourcePrefix,
             profile: resolvedProfile,
             seed: seed + 1,

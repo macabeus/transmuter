@@ -180,7 +180,7 @@ transmuter match base.pas \
 | `--target <path>`         | Target object file (.o)                                                                                             |
 | `--function <name>`       | Function name to match                                                                                              |
 | `--compiler <cmd>`        | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{functionName}}`)                                   |
-| `--cwd <path>`            | Working directory for the compiler                                                                                  |
+| `--cwd <path>`            | Working directory for the compiler (default: the `decomp.yaml`'s directory, else the current one) |
 | `--profile <id>`          | Compiler profile: `agbcc`, `old-agbcc`, `ido`, `mips-gcc-272`                                                       |
 | `--concurrency <n>`       | Parallel slots, each running in its own worker thread (default: `min(CPU count, 4)`)                                |
 | `--max-compiles <n>`      | Stop after N compile attempts (counts only mutations that survived dedup; no-mutation/dedup don't count)            |
@@ -224,7 +224,7 @@ transmuter refine base.c \
 | `--function <name>`       | Function name to match                                                                                 |
 | `--compiler <cmd>`        | Compiler command template                                                                              |
 | `--guideline <id>`        | Guideline to apply (omit to list available)                                                            |
-| `--cwd <path>`            | Working directory for the compiler                                                                     |
+| `--cwd <path>`            | Working directory for the compiler (default: the `decomp.yaml`'s directory, else the current one) |
 | `--profile <id>`          | Compiler profile                                                                                       |
 | `--concurrency <n>`       | Total concurrent slots (default: `min(CPU count, 4)`)                                                  |
 | `--max-compiles <n>`      | Max compile attempts per violation (default: unlimited)                                                |

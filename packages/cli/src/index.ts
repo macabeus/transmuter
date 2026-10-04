@@ -29,7 +29,8 @@ Match Options:
   --target <path>      Path to target object file (.o)
   --function <name>    Target function name
   --compiler <cmd>     Compiler command template
-  --cwd <path>         Working directory for compiler
+  --cwd <path>         Working directory for compiler (default: the decomp.yaml's
+                       directory, else the current one)
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
   --concurrency <n>    Number of concurrent slots (default: min(cpus, 4))
                        Each slot runs in its own Bun Worker thread
@@ -59,7 +60,8 @@ Refine Options:
   --function <name>    Target function name
   --compiler <cmd>     Compiler command template
   --guideline <id>     Guideline to apply (omit to list available)
-  --cwd <path>         Working directory for compiler
+  --cwd <path>         Working directory for compiler (default: the decomp.yaml's
+                       directory, else the current one)
   --profile <id>       Compiler profile
   --concurrency <n>    Total concurrent slots (default: min(cpus, 4))
   --max-compiles <n>   Max compile attempts per violation (default: unlimited)

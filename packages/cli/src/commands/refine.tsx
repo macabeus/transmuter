@@ -213,7 +213,10 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
   const source = await fs.readFile(args.sourceFile, 'utf-8');
   const language = detectLanguage(args.sourceFile);
   ensureLanguageRegistered(language);
-  const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
+  const loaded = loadDecompYaml(args.config, args.cwd);
+  const transmuterConfig = transmuterBlock(loaded);
+  // Compile where the decomp.yaml is, as its template's relative paths expect.
+  const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();
 
   const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
   const fnName = args.function ?? '';
@@ -225,7 +228,7 @@ async function listGuidelines(args: RefineArgs): Promise<void> {
     try {
       const compiler = new Compiler({
         command: compilerCommand,
-        cwd: args.cwd ?? process.cwd(),
+        cwd: compileCwd,
         functionName: fnName,
         language,
       });
@@ -583,7 +586,10 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const transmuterConfig = transmuterBlock(loadDecompYaml(args.config, args.cwd));
+        const loaded = loadDecompYaml(args.config, args.cwd);
+        const transmuterConfig = transmuterBlock(loaded);
+        // Compile where the decomp.yaml is, as its template's relative paths expect.
+        const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();
 
         const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
         if (!compilerCommand) {
@@ -623,7 +629,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
           functionName: fnName,
           targetObjectPath: targetPath,
           compilerCommand,
-          cwd: args.cwd ?? process.cwd(),
+          cwd: compileCwd,
           sourcePrefix: args.sourcePrefix,
           profile: args.profile ?? transmuterConfig?.profile,
           guidelineId: args.guideline!,
@@ -676,7 +682,7 @@ function RefineApp({ args, onComplete }: { args: RefineArgs; onComplete: (code: 
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
-            cwd: args.cwd ?? process.cwd(),
+            cwd: compileCwd,
             sourcePrefix: args.sourcePrefix,
             profile: args.profile ?? transmuterConfig?.profile,
             seed: (args.seed ?? 42) + 1,

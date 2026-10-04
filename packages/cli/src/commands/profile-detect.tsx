@@ -103,24 +103,19 @@ function DetectionTree({
           )}
 
           {/* Platform step (only shown if compiler didn't match) */}
-          {!trace.compilerMatched &&
-            (trace.platform ? (
-              <CheckLine passed={trace.platformMatched} indent={2}>
-                {trace.platformMatched ? (
-                  <Text>
-                    platform property maps to a profile: <Text bold>{trace.platform}</Text>
-                  </Text>
-                ) : (
-                  <Text>
-                    platform property did not map to any profile: <Text bold>{trace.platform}</Text>
-                  </Text>
-                )}
-              </CheckLine>
-            ) : (
-              <CheckLine passed={false} indent={2}>
-                No platform property in decomp.yaml
-              </CheckLine>
-            ))}
+          {!trace.compilerMatched && (
+            <CheckLine passed={trace.platformMatched} indent={2}>
+              {trace.platformMatched ? (
+                <Text>
+                  platform property maps to a profile: <Text bold>{trace.platform}</Text>
+                </Text>
+              ) : (
+                <Text>
+                  platform property did not map to any profile: <Text bold>{trace.platform}</Text>
+                </Text>
+              )}
+            </CheckLine>
+          )}
         </>
       )}
 
