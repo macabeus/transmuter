@@ -58,7 +58,7 @@ async function runSearch(
 describe('MutationSearch', () => {
   describe('initial sanity', () => {
     it('completes with reason "aborted" and emits an error when the initial compile fails', async () => {
-      const { result, events } = await runSearch({ compilerCommand: 'bash -c "exit 1"' });
+      const { result, events } = await runSearch({ compilerCommand: 'bash -c "exit 1" # {{inputPath}} {{outputPath}}' });
 
       expect(result.reason).toBe('aborted');
       expect(result.totalIterations).toBe(0);
