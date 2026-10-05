@@ -1,6 +1,7 @@
 /**
  * `transmuter match` command — main permutation command with live dashboard.
  */
+import { loadDecompYaml, searchDecompYaml } from '@match-kit/decomp-yaml/files';
 import {
   Cleanup,
   type CleanupEvent,
@@ -22,7 +23,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 import { type ControlServer, createControlServer, createMatchApp } from '../api/server.js';
 import { type CliState, initialState, reduceEvent } from '../bridge.js';
-import { loadDecompYaml } from '../config.js';
+import { transmuterBlock } from '../config.js';
 
 export interface MatchArgs {
   sourceFile: string;
@@ -40,7 +41,6 @@ export interface MatchArgs {
   depth?: number;
   noCleanup?: boolean;
   config?: string;
-  version?: string;
   sourcePrefix?: string;
   api?: boolean;
   apiPort?: number;
@@ -331,8 +331,10 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
         const source = await fs.readFile(args.sourceFile, 'utf-8');
         const language = detectLanguage(args.sourceFile);
         ensureLanguageRegistered(language);
-        const decompConfig = await loadDecompYaml(args.config, args.cwd);
-        const transmuterConfig = decompConfig?.tools?.transmuter;
+        const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
+        const transmuterConfig = transmuterBlock(loaded);
+        // Compile where the decomp.yaml is, as its template's relative paths expect.
+        const compileCwd = args.cwd ?? loaded?.dir ?? process.cwd();
 
         const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
         if (!compilerCommand) {
@@ -398,7 +400,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
-            cwd: args.cwd ?? process.cwd(),
+            cwd: compileCwd,
             sourcePrefix: args.sourcePrefix,
           });
           const result = await reducer.reduce();
@@ -449,7 +451,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
           functionName: fnName,
           targetObjectPath: targetPath,
           compilerCommand,
-          cwd: args.cwd ?? process.cwd(),
+          cwd: compileCwd,
           profile: resolvedProfile,
           concurrency,
           maxCompiles,
@@ -505,7 +507,7 @@ function MatchApp({ args, onComplete }: { args: MatchArgs; onComplete: (code: nu
             functionName: fnName,
             targetObjectPath: targetPath,
             compilerCommand,
-            cwd: args.cwd ?? process.cwd(),
+            cwd: compileCwd,
             sourcePrefix: args.sourcePrefix,
             profile: resolvedProfile,
             seed: seed + 1,

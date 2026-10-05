@@ -5,11 +5,12 @@
  * detects the compiler profile, and displays a decision tree showing why
  * a particular profile was selected, followed by the rule table.
  */
+import { loadDecompYaml, searchDecompYaml } from '@match-kit/decomp-yaml/files';
 import { type Language, type ProfileTrace, type ResolvedRule, getProfile, getRuleWeights } from '@transmuter/core';
 import { Box, Text, render } from 'ink';
 import React from 'react';
 
-import { loadDecompYaml } from '../config.js';
+import { transmuterBlock } from '../config.js';
 
 export interface ProfileDetectArgs {
   profile?: string;
@@ -102,24 +103,19 @@ function DetectionTree({
           )}
 
           {/* Platform step (only shown if compiler didn't match) */}
-          {!trace.compilerMatched &&
-            (trace.platform ? (
-              <CheckLine passed={trace.platformMatched} indent={2}>
-                {trace.platformMatched ? (
-                  <Text>
-                    platform property maps to a profile: <Text bold>{trace.platform}</Text>
-                  </Text>
-                ) : (
-                  <Text>
-                    platform property did not map to any profile: <Text bold>{trace.platform}</Text>
-                  </Text>
-                )}
-              </CheckLine>
-            ) : (
-              <CheckLine passed={false} indent={2}>
-                No platform property in decomp.yaml
-              </CheckLine>
-            ))}
+          {!trace.compilerMatched && (
+            <CheckLine passed={trace.platformMatched} indent={2}>
+              {trace.platformMatched ? (
+                <Text>
+                  platform property maps to a profile: <Text bold>{trace.platform}</Text>
+                </Text>
+              ) : (
+                <Text>
+                  platform property did not map to any profile: <Text bold>{trace.platform}</Text>
+                </Text>
+              )}
+            </CheckLine>
+          )}
         </>
       )}
 
@@ -298,11 +294,11 @@ function ProfileDetectApp({
 }
 
 export async function profileDetectCommand(args: ProfileDetectArgs): Promise<void> {
-  const decompConfig = await loadDecompYaml(args.config, args.cwd);
-  const transmuterConfig = decompConfig?.tools?.transmuter;
+  const loaded = args.config ? loadDecompYaml(args.config) : searchDecompYaml(args.cwd);
+  const transmuterConfig = transmuterBlock(loaded);
 
   const compilerCommand = args.compiler ?? transmuterConfig?.compiler;
-  const platform = decompConfig?.platform;
+  const platform = loaded?.config.platform;
 
   const trace = getProfile({ profileId: args.profile, compilerCommand, platform });
 
@@ -316,5 +312,5 @@ export async function profileDetectCommand(args: ProfileDetectArgs): Promise<voi
 
   const language = args.language as Language | undefined;
 
-  render(<ProfileDetectApp trace={trace} decompYamlFound={decompConfig !== null} language={language} rules={rules} />);
+  render(<ProfileDetectApp trace={trace} decompYamlFound={loaded !== null} language={language} rules={rules} />);
 }

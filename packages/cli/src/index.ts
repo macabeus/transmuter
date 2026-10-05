@@ -29,7 +29,8 @@ Match Options:
   --target <path>      Path to target object file (.o)
   --function <name>    Target function name
   --compiler <cmd>     Compiler command template
-  --cwd <path>         Working directory for compiler
+  --cwd <path>         Working directory for compiler (default: the decomp.yaml's
+                       directory, else the current one)
   --profile <id>       Compiler profile (agbcc, old-agbcc, ido, mips-gcc-272)
   --concurrency <n>    Number of concurrent slots (default: min(cpus, 4))
                        Each slot runs in its own Bun Worker thread
@@ -46,7 +47,6 @@ Match Options:
   --depth <n>          Mutations per iteration (default: 1)
   --no-cleanup         Skip cleanup after finding a match
   --config <path>      Path to decomp.yaml
-  --version <name>     Version name for multi-version projects
   --api                Start HTTP control server for external access
   --api-port <n>       Fixed port for the API server (default: random)
   --constraints <path> JSON file with focusConstraints (focus-region,
@@ -59,7 +59,8 @@ Refine Options:
   --function <name>    Target function name
   --compiler <cmd>     Compiler command template
   --guideline <id>     Guideline to apply (omit to list available)
-  --cwd <path>         Working directory for compiler
+  --cwd <path>         Working directory for compiler (default: the decomp.yaml's
+                       directory, else the current one)
   --profile <id>       Compiler profile
   --concurrency <n>    Total concurrent slots (default: min(cpus, 4))
   --max-compiles <n>   Max compile attempts per violation (default: unlimited)
@@ -111,7 +112,6 @@ async function main(): Promise<void> {
           depth: { type: 'string' },
           'no-cleanup': { type: 'boolean' },
           config: { type: 'string' },
-          version: { type: 'string' },
           'source-prefix': { type: 'string' },
           api: { type: 'boolean' },
           'api-port': { type: 'string' },
@@ -148,7 +148,6 @@ async function main(): Promise<void> {
         depth: values.depth ? Number(values.depth) : undefined,
         noCleanup: values['no-cleanup'],
         config: values.config,
-        version: values.version,
         sourcePrefix: values['source-prefix']
           ? await import('fs/promises').then((fs) => fs.readFile(values['source-prefix']!, 'utf-8'))
           : undefined,

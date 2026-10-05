@@ -69,11 +69,19 @@ bun tools/transmuter/packages/cli/dist/index.js match ...
 
 The rest of this README writes `transmuter ...` for brevity. Substitute `bun tools/transmuter/packages/cli/dist/index.js ...` when you run it.
 
-4. Add a `tools.transmuter` section to your [`decomp.yaml`](https://github.com/ethteck/decomp_settings) with the compiler command and optional flags. Example for a GBA project using `agbcc`:
+4. Add a `tools.transmuter` section to your [`decomp.yaml`](https://github.com/ethteck/decomp_settings) with the compiler command and optional flags. The file must meet the decomp_settings spec: `name`, `platform`, and each version with its `fullname` and its `target`, `build_dir`, `map` and `compiled_target` paths. Example for a GBA project using `agbcc`:
 
 ```yaml
+name: My Project
 platform: gba
-# ...
+versions:
+  - name: us
+    fullname: US
+    paths:
+      target: baserom.gba
+      build_dir: build
+      map: my-project.map
+      compiled_target: my-project.gba
 tools:
   transmuter:
     # Shell command template for compiling a candidate source.
@@ -172,7 +180,7 @@ transmuter match base.pas \
 | `--target <path>`         | Target object file (.o)                                                                                             |
 | `--function <name>`       | Function name to match                                                                                              |
 | `--compiler <cmd>`        | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{functionName}}`)                                   |
-| `--cwd <path>`            | Working directory for the compiler                                                                                  |
+| `--cwd <path>`            | Working directory for the compiler (default: the `decomp.yaml`'s directory, else the current one) |
 | `--profile <id>`          | Compiler profile: `agbcc`, `old-agbcc`, `ido`, `mips-gcc-272`                                                       |
 | `--concurrency <n>`       | Parallel slots, each running in its own worker thread (default: `min(CPU count, 4)`)                                |
 | `--max-compiles <n>`      | Stop after N compile attempts (counts only mutations that survived dedup; no-mutation/dedup don't count)            |
@@ -183,7 +191,6 @@ transmuter match base.pas \
 | `--isolate`               | Replace non-target, non-inline function bodies with forward declarations before reduce/match — useful on preprocessed `.ctx` files (macros are preserved) |
 | `--no-cleanup`            | Skip cleanup after finding a match (do not remove temp vars, unnecessary casts)                                     |
 | `--config <path>`         | Explicit path to `decomp.yaml`                                                                                      |
-| `--version <name>`        | Version name for multi-version projects (selects the matching `versions[]` entry in `decomp.yaml`)                  |
 | `--source-prefix <path>`  | File whose contents are prepended to every compiled candidate (typically `context.h`)                               |
 | `--constraints <path>`    | JSON file with `focusConstraints` (focus-region, avoid-region, hypothesis) to bias mutation selection               |
 | `--api`                   | Start HTTP control server for external access                                                                       |
@@ -216,7 +223,7 @@ transmuter refine base.c \
 | `--function <name>`       | Function name to match                                                                                 |
 | `--compiler <cmd>`        | Compiler command template                                                                              |
 | `--guideline <id>`        | Guideline to apply (omit to list available)                                                            |
-| `--cwd <path>`            | Working directory for the compiler                                                                     |
+| `--cwd <path>`            | Working directory for the compiler (default: the `decomp.yaml`'s directory, else the current one) |
 | `--profile <id>`          | Compiler profile                                                                                       |
 | `--concurrency <n>`       | Total concurrent slots (default: `min(CPU count, 4)`)                                                  |
 | `--max-compiles <n>`      | Max compile attempts per violation (default: unlimited)                                                |
