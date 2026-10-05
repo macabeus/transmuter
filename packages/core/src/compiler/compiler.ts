@@ -26,11 +26,12 @@ function describe(outcome: Exclude<Outcome, { kind: 'ok' }>): string {
       return outcome.output || `Compiler exited with code ${outcome.exitCode}`;
     case 'no-object':
       return 'Compiler produced no output file';
+    case 'crashed':
+      return outcome.output || `Compiler crashed (${outcome.signal})`;
     case 'killed':
-      return (
-        outcome.output ||
-        `Compiler was killed (${outcome.exitCode === null ? 'by a signal' : `exit ${outcome.exitCode}`})`
-      );
+      return outcome.output || `Compiler was killed (${outcome.signal})`;
+    case 'not-run':
+      return outcome.output || `Compiler did not run (exit ${outcome.exitCode})`;
     case 'aborted':
       return 'Aborted';
     case 'spawn-failed':
