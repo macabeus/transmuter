@@ -85,7 +85,7 @@ versions:
 tools:
   transmuter:
     # Shell command template for compiling a candidate source.
-    # `{{inputPath}}` and `{{outputPath}}` are required; `{{functionName}}` (or `{{symbol}}`) is optional.
+    # `{{inputPath}}` and `{{outputPath}}` are required; `{{symbol}}` (the function's symbol) is optional.
     # It runs under `sh -e`, so a step that fails fails the compile.
     compiler: |
       ASM_DIR="$(dirname "{{outputPath}}")"
@@ -180,7 +180,7 @@ transmuter match base.pas \
 |---------------------------|---------------------------------------------------------------------------------------------------------------------|
 | `--target <path>`         | Target object file (.o)                                                                                             |
 | `--function <name>`       | Function name to match                                                                                              |
-| `--compiler <cmd>`        | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{functionName}}` or `{{symbol}}`)                   |
+| `--compiler <cmd>`        | Compiler command template (`{{inputPath}}`, `{{outputPath}}`, `{{symbol}}`)                                         |
 | `--cwd <path>`            | Working directory for the compiler (default: the `decomp.yaml`'s directory, else the current one) |
 | `--profile <id>`          | Compiler profile: `agbcc`, `old-agbcc`, `ido`, `mips-gcc-272`                                                       |
 | `--concurrency <n>`       | Parallel slots, each running in its own worker thread (default: `min(CPU count, 4)`)                                |

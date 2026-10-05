@@ -235,20 +235,7 @@ describe('Compiler', () => {
   // ---------------------------------------------------------------------------
 
   describe('template substitution', () => {
-    it('substitutes {{functionName}} in the command', async () => {
-      const compiler = createCompiler({
-        command: `echo "{{functionName}}" > {{outputPath}} # {{inputPath}}`,
-        cwd: '/tmp',
-        functionName: 'my_function',
-      });
-
-      const result = await compiler.compile('');
-      expectOk(result);
-      const content = await fs.readFile(result.objPath, 'utf-8');
-      expect(content.trim()).toBe('my_function');
-    });
-
-    it('substitutes {{symbol}} with the function name too', async () => {
+    it('substitutes {{symbol}} with the function name', async () => {
       const compiler = createCompiler({
         command: `echo "{{symbol}}" > {{outputPath}} # {{inputPath}}`,
         cwd: '/tmp',
@@ -268,13 +255,17 @@ describe('Compiler', () => {
 
     it('refuses an unknown placeholder', () => {
       expect(() =>
-        createCompiler({ command: 'cc {{flags}} {{inputPath}} -o {{outputPath}}', cwd: '/tmp', functionName: 'foo' }),
-      ).toThrow('unknown placeholder {{flags}}');
+        createCompiler({
+          command: 'cc {{functionName}} {{inputPath}} -o {{outputPath}}',
+          cwd: '/tmp',
+          functionName: 'foo',
+        }),
+      ).toThrow('unknown placeholder {{functionName}}');
     });
 
     it('refuses a function name the shell would read as more than a word', async () => {
       const compiler = createCompiler({
-        command: `echo {{functionName}} > {{outputPath}} # {{inputPath}}`,
+        command: `echo {{symbol}} > {{outputPath}} # {{inputPath}}`,
         cwd: '/tmp',
         functionName: 'foo; rm -rf ~',
       });
@@ -604,11 +595,11 @@ describe('Compiler', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Scratch reuse
+  // Object directories
   // ---------------------------------------------------------------------------
 
-  describe('scratch reuse', () => {
-    it('compiles in a fresh directory each time, reusing a scratch once its object is cleaned up', async () => {
+  describe('object directories', () => {
+    it('compiles in a fresh directory each time, and cleanup removes it', async () => {
       const compiler = createCompiler({
         command: AGBCC_COMMAND,
         cwd: COMPILERS_DIR,

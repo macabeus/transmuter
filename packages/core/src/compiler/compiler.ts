@@ -1,7 +1,7 @@
 /**
  * Wraps a shell-based compiler command for use in the mutation pipeline.
  */
-import { type Outcome, type Runner, type Scratch, createRunner } from '@match-kit/compiler';
+import { type Outcome, type Runner, createRunner } from '@match-kit/compiler';
 import fs from 'fs/promises';
 import type { Language } from '~/language.js';
 import type { CompileResult } from '~/types.js';
@@ -16,7 +16,7 @@ const LANG_EXT: Record<Language, string> = {
 /** Compiler output kept in an error, per stream. */
 const MAX_OUTPUT_BYTES = 50_000;
 
-/** Returns each object a caller still holds to its compiler's free scratches. */
+/** Releases each object a caller still holds. */
 const releases = new Map<string, () => void>();
 
 /** The error text for a failed compile. */
@@ -43,8 +43,6 @@ export class Compiler {
   #functionName: string;
   #sourcePrefix: string;
   #ext: string;
-  /** Scratches whose last object was cleaned up, ready for the next compile. */
-  #free: Scratch[] = [];
   /** Objects this compiler made that a caller still holds. */
   #held = new Set<string>();
 
@@ -68,23 +66,20 @@ export class Compiler {
    * `Compiler.objectFile` releases it, or until `destroy()`.
    */
   async compile(source: string): Promise<CompileResult> {
-    const scratch = this.#free.pop() ?? this.#runner.scratch();
     let outcome: Outcome;
     try {
-      outcome = await scratch.compile(this.#sourcePrefix + source, { ext: this.#ext, symbol: this.#functionName });
+      outcome = await this.#runner.compile(this.#sourcePrefix + source, { ext: this.#ext, symbol: this.#functionName });
     } catch (err) {
-      this.#free.push(scratch);
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
     if (outcome.kind !== 'ok') {
-      this.#free.push(scratch);
       return { success: false, error: describe(outcome) };
     }
     const objPath = outcome.object;
     this.#held.add(objPath);
     releases.set(objPath, () => {
       this.#held.delete(objPath);
-      this.#free.push(scratch);
+      outcome[Symbol.dispose]();
     });
     return { success: true, objPath };
   }
@@ -101,13 +96,12 @@ export class Compiler {
     return { path: objPath, [Symbol.asyncDispose]: () => Compiler.cleanup(objPath) };
   }
 
-  /** Wait for the compiles in flight, then remove every scratch directory. Called on shutdown. */
+  /** Wait for the compiles in flight, then remove every object a caller still holds. Called on shutdown. */
   async destroy(): Promise<void> {
     await this.#runner.dispose();
     for (const objPath of this.#held) {
       releases.delete(objPath);
     }
     this.#held.clear();
-    this.#free = [];
   }
 }
