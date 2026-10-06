@@ -1,31 +1,53 @@
 /**
  * Wraps a shell-based compiler command for use in the mutation pipeline.
  */
-import { closeSync, openSync } from 'fs';
+import { type Outcome, type Runner, createRunner } from '@match-kit/compiler';
 import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
 import type { Language } from '~/language.js';
 import type { CompileResult } from '~/types.js';
 
 /** Map Language to file extension used for temp source files. */
 const LANG_EXT: Record<Language, string> = {
-  c: '.c',
-  cpp: '.cpp',
-  pascal: '.pas',
+  c: 'c',
+  cpp: 'cpp',
+  pascal: 'pas',
 };
 
+/** Compiler output kept in an error, per stream. */
+const MAX_OUTPUT_BYTES = 50_000;
+
+/** Releases each object a caller still holds. */
+const releases = new Map<string, () => void>();
+
+/** The error text for a failed compile. */
+function describe(outcome: Exclude<Outcome, { kind: 'ok' }>): string {
+  switch (outcome.kind) {
+    case 'rejected':
+      return outcome.output || `Compiler exited with code ${outcome.exitCode}`;
+    case 'no-object':
+      return 'Compiler produced no output file';
+    case 'crashed':
+      return outcome.output || `Compiler crashed (${outcome.signal})`;
+    case 'killed':
+      return outcome.output || `Compiler was killed (${outcome.signal})`;
+    case 'not-run':
+      return outcome.output || `Compiler did not run (exit ${outcome.exitCode})`;
+    case 'aborted':
+      return 'Aborted';
+    case 'spawn-failed':
+      return outcome.message;
+  }
+}
+
 export class Compiler {
-  #command: string;
-  #cwd: string;
+  #runner: Runner;
   #functionName: string;
-  #signal?: AbortSignal;
   #sourcePrefix: string;
   #ext: string;
-  #tmpDirPromise: Promise<string> | null = null;
-  #compileCounter = 0;
-  #inFlight = new Set<Promise<CompileResult>>();
+  /** Objects this compiler made that a caller still holds. */
+  #held = new Set<string>();
 
+  /** Throws a `TemplateError` when `command` lacks `{{inputPath}}` or `{{outputPath}}`, or has an unknown placeholder. */
   constructor(opts: {
     command: string;
     cwd: string;
@@ -34,97 +56,40 @@ export class Compiler {
     signal?: AbortSignal;
     sourcePrefix?: string;
   }) {
-    this.#command = opts.command;
-    this.#cwd = opts.cwd;
+    this.#runner = createRunner(opts.command, { cwd: opts.cwd, signal: opts.signal, maxOutputBytes: MAX_OUTPUT_BYTES });
     this.#functionName = opts.functionName;
-    this.#signal = opts.signal;
     this.#sourcePrefix = opts.sourcePrefix ?? '';
     this.#ext = LANG_EXT[opts.language ?? 'c'];
   }
 
   /**
-   * Ensure the shared temp directory exists.
+   * Compile a source code to an object file. The object lives until `Compiler.cleanup` or
+   * `Compiler.objectFile` releases it, or until `destroy()`.
    */
-  #ensureTmpDir(): Promise<string> {
-    if (!this.#tmpDirPromise) {
-      this.#tmpDirPromise = fs.mkdtemp(path.join(os.tmpdir(), 'transmuter-'));
-    }
-    return this.#tmpDirPromise;
-  }
-
-  /**
-   * Compile a source code to an object file.
-   */
-  compile(source: string): Promise<CompileResult> {
-    const promise = this.#compileInner(source);
-    this.#inFlight.add(promise);
-    void promise.finally(() => this.#inFlight.delete(promise));
-    return promise;
-  }
-
-  async #compileInner(source: string): Promise<CompileResult> {
-    if (this.#signal?.aborted) {
-      return { success: false, error: 'Aborted' };
-    }
-
-    let inputPath = '';
-    let outputPath = '';
+  async compile(source: string): Promise<CompileResult> {
+    let outcome: Outcome;
     try {
-      const tmpDir = await this.#ensureTmpDir();
-      const id = this.#compileCounter++;
-      inputPath = path.join(tmpDir, `input-${id}${this.#ext}`);
-      outputPath = path.join(tmpDir, `output-${id}.o`);
-
-      await Bun.write(inputPath, this.#sourcePrefix + source);
-
-      const rendered = this.#command
-        .replaceAll('{{inputPath}}', inputPath)
-        .replaceAll('{{outputPath}}', outputPath)
-        .replaceAll('{{functionName}}', this.#functionName);
-
-      const stdoutPath = path.join(tmpDir, `output-${id}.stdout`);
-      const stderrPath = path.join(tmpDir, `output-${id}.stderr`);
-      const result = await this.#exec(rendered, stdoutPath, stderrPath);
-
-      const cleanupAux = (): Promise<unknown> =>
-        Promise.all([
-          fs.unlink(stdoutPath).catch(() => {}),
-          fs.unlink(stderrPath).catch(() => {}),
-          fs.unlink(inputPath).catch(() => {}),
-        ]);
-
-      if (result.exitCode !== 0) {
-        await Promise.all([cleanupAux(), fs.unlink(outputPath).catch(() => {})]);
-        return {
-          success: false,
-          error: result.stderr.trim() || result.stdout.trim() || `Compiler exited with code ${result.exitCode}`,
-        };
-      }
-
-      // exitCode 0 but no output file = misconfigured compilerCommand (e.g.
-      // missing `-o`). Surface that here rather than letting Scorer fail with
-      // a more cryptic message downstream.
-      try {
-        await fs.access(outputPath);
-      } catch {
-        await cleanupAux();
-        return { success: false, error: 'Compiler produced no output file' };
-      }
-
-      await cleanupAux();
-      return { success: true, objPath: outputPath };
+      outcome = await this.#runner.compile(this.#sourcePrefix + source, { ext: this.#ext, symbol: this.#functionName });
     } catch (err) {
-      await Promise.all([fs.unlink(inputPath).catch(() => {}), fs.unlink(outputPath).catch(() => {})]);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+    if (outcome.kind !== 'ok') {
+      return { success: false, error: describe(outcome) };
+    }
+    const objPath = outcome.object;
+    this.#held.add(objPath);
+    releases.set(objPath, () => {
+      this.#held.delete(objPath);
+      outcome[Symbol.dispose]();
+    });
+    return { success: true, objPath };
   }
 
   /** Clean up a compiled object file. */
   static async cleanup(objPath: string): Promise<void> {
     await fs.unlink(objPath).catch(() => {});
+    releases.get(objPath)?.();
+    releases.delete(objPath);
   }
 
   /** A compiled object file, removed when the `await using` that holds it ends. */
@@ -132,110 +97,12 @@ export class Compiler {
     return { path: objPath, [Symbol.asyncDispose]: () => Compiler.cleanup(objPath) };
   }
 
-  /** Remove the shared temp directory. Called on shutdown. */
+  /** Wait for the compiles in flight, then remove every object a caller still holds. Called on shutdown. */
   async destroy(): Promise<void> {
-    // Wait for any in-flight compiles before wiping the tmp dir from under them.
-    if (this.#inFlight.size > 0) {
-      await Promise.allSettled([...this.#inFlight]);
+    await this.#runner.dispose();
+    for (const objPath of this.#held) {
+      releases.delete(objPath);
     }
-
-    if (this.#tmpDirPromise) {
-      const dir = await this.#tmpDirPromise.catch(() => null);
-      this.#tmpDirPromise = null;
-      if (dir) {
-        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-      }
-    }
-  }
-
-  async #exec(
-    command: string,
-    stdoutPath: string,
-    stderrPath: string,
-  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    // Route child stdout/stderr to regular files (fd stdio) rather than
-    // IPC pipes. Writing Wine-backed subprocess stderr through a Bun pipe
-    // adds ~5 s of wall per compile on macOS (Wine Crossover + mwcceppc); fd
-    // stdio has no such penalty. We read the files after the child exits.
-    let stdoutFd: number | undefined;
-    let stderrFd: number | undefined;
-    try {
-      stdoutFd = openSync(stdoutPath, 'w');
-      stderrFd = openSync(stderrPath, 'w');
-    } catch (err) {
-      if (stdoutFd !== undefined) {
-        closeSync(stdoutFd);
-      }
-      if (stderrFd !== undefined) {
-        closeSync(stderrFd);
-      }
-      return { exitCode: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) };
-    }
-
-    // `detached: true` puts the child in its own process group so we can
-    // `kill(-pgid)` grandchildren on abort. Without it, aborting a command
-    // like `gcc … && as …` would kill the shell but leave the compiler
-    // running.
-    let proc: ReturnType<typeof Bun.spawn>;
-    try {
-      proc = Bun.spawn(['/bin/sh', '-c', command], {
-        cwd: this.#cwd,
-        stdio: ['ignore', stdoutFd, stderrFd],
-        detached: true,
-      });
-    } catch (err) {
-      closeSync(stdoutFd);
-      closeSync(stderrFd);
-      return { exitCode: 1, stdout: '', stderr: err instanceof Error ? err.message : String(err) };
-    }
-
-    const onAbort = () => {
-      try {
-        if (proc.pid !== undefined) {
-          // Negative pid → signal the whole process group.
-          process.kill(-proc.pid, 'SIGTERM');
-        }
-      } catch {
-        /* already dead */
-      }
-    };
-    this.#signal?.addEventListener('abort', onAbort, { once: true });
-
-    let exitCode: number;
-    let fallbackErr: string | undefined;
-    try {
-      exitCode = (await proc.exited) ?? 1;
-    } catch (err) {
-      exitCode = 1;
-      fallbackErr = err instanceof Error ? err.message : String(err);
-    }
-
-    this.#signal?.removeEventListener('abort', onAbort);
-    closeSync(stdoutFd);
-    closeSync(stderrFd);
-    // Success: caller never reads stdout/stderr, so don't pay for the file
-    // reads. On failure or a `proc.exited` reject, surface what we have.
-    if (exitCode === 0 && fallbackErr === undefined) {
-      return { exitCode, stdout: '', stderr: '' };
-    }
-    const [stdout, stderr] = await Promise.all([readTruncated(stdoutPath), readTruncated(stderrPath)]);
-    return { exitCode, stdout, stderr: fallbackErr ?? stderr };
-  }
-}
-
-/** Read a file and cap to 50KB with a truncation marker. Missing file → empty string. */
-async function readTruncated(filePath: string): Promise<string> {
-  try {
-    const file = Bun.file(filePath);
-    if (!(await file.exists())) {
-      return '';
-    }
-    if (file.size > 50_000) {
-      const buf = new Uint8Array(await file.slice(0, 50_000).arrayBuffer());
-      return new TextDecoder().decode(buf) + '\n... (truncated)';
-    }
-    return await file.text();
-  } catch {
-    return '';
+    this.#held.clear();
   }
 }

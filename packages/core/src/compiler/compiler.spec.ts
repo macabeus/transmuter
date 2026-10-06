@@ -1,5 +1,4 @@
 import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { CompileResult } from '~/types.js';
@@ -86,7 +85,7 @@ describe('Compiler', () => {
       const result = await compiler.compile(VALID_C_SOURCE);
 
       expectOk(result);
-      expect(result.objPath).toMatch(/output-0\.o$/);
+      expect(result.objPath).toMatch(/cand\.o$/);
       const stat = await fs.stat(result.objPath);
       expect(stat.size).toBeGreaterThan(0);
     });
@@ -102,7 +101,7 @@ describe('Compiler', () => {
       expectOk(result);
     });
 
-    it('increments file counter across compilations', async () => {
+    it('keeps each object until it is cleaned up', async () => {
       const compiler = createCompiler({
         command: AGBCC_COMMAND,
         cwd: COMPILERS_DIR,
@@ -114,8 +113,7 @@ describe('Compiler', () => {
 
       expectOk(r1);
       expectOk(r2);
-      expect(r1.objPath).toContain('output-0');
-      expect(r2.objPath).toContain('output-1');
+      expect(r1.objPath).not.toBe(r2.objPath);
       // Both exist independently.
       await fs.access(r1.objPath);
       await fs.access(r2.objPath);
@@ -152,7 +150,7 @@ describe('Compiler', () => {
       const result = await compiler.compile(VALID_PASCAL_SOURCE);
 
       expectOk(result);
-      expect(result.objPath).toMatch(/output-0\.o$/);
+      expect(result.objPath).toMatch(/cand\.o$/);
       const stat = await fs.stat(result.objPath);
       expect(stat.size).toBeGreaterThan(0);
     });
@@ -237,17 +235,46 @@ describe('Compiler', () => {
   // ---------------------------------------------------------------------------
 
   describe('template substitution', () => {
-    it('substitutes {{functionName}} in the command', async () => {
+    it('substitutes {{symbol}} with the function name', async () => {
       const compiler = createCompiler({
-        command: `echo "{{functionName}}" > {{outputPath}}`,
+        command: `echo "{{symbol}}" > {{outputPath}} # {{inputPath}}`,
         cwd: '/tmp',
         functionName: 'my_function',
       });
 
       const result = await compiler.compile('');
       expectOk(result);
-      const content = await fs.readFile(result.objPath, 'utf-8');
-      expect(content.trim()).toBe('my_function');
+      expect((await fs.readFile(result.objPath, 'utf-8')).trim()).toBe('my_function');
+    });
+
+    it('refuses a command without {{inputPath}} or {{outputPath}}', () => {
+      expect(() => createCompiler({ command: 'cc -c x.c', cwd: '/tmp', functionName: 'foo' })).toThrow(
+        'compile command lacks {{inputPath}} and {{outputPath}}',
+      );
+    });
+
+    it('refuses an unknown placeholder', () => {
+      expect(() =>
+        createCompiler({
+          command: 'cc {{functionName}} {{inputPath}} -o {{outputPath}}',
+          cwd: '/tmp',
+          functionName: 'foo',
+        }),
+      ).toThrow('unknown placeholder {{functionName}}');
+    });
+
+    it('refuses a function name the shell would read as more than a word', async () => {
+      const compiler = createCompiler({
+        command: `echo {{symbol}} > {{outputPath}} # {{inputPath}}`,
+        cwd: '/tmp',
+        functionName: 'foo; rm -rf ~',
+      });
+
+      const result = await compiler.compile('');
+      expect(result).toEqual({
+        success: false,
+        error: 'the symbol name contains shell-unsafe characters, refusing to substitute: "foo; rm -rf ~"',
+      });
     });
   });
 
@@ -287,10 +314,22 @@ describe('Compiler', () => {
       }
     });
 
+    it('returns error when a middle step fails and the last one succeeds', async () => {
+      const compiler = createCompiler({
+        command: 'false; cp {{inputPath}} {{outputPath}}',
+        cwd: '/tmp',
+        functionName: 'foo',
+      });
+
+      const result = await compiler.compile(VALID_C_SOURCE);
+
+      expect(result).toEqual({ success: false, error: 'Compiler exited with code 1' });
+    });
+
     it('returns error when compiler produces no output file', async () => {
       // Command succeeds (exit 0) but does not create the output file
       const compiler = createCompiler({
-        command: 'echo "no output created"',
+        command: 'echo "no output created" # {{inputPath}} {{outputPath}}',
         cwd: '/tmp',
         functionName: 'foo',
       });
@@ -305,7 +344,7 @@ describe('Compiler', () => {
 
     it('reports exit code when compiler fails with no output', async () => {
       const compiler = createCompiler({
-        command: 'exit 42',
+        command: 'exit 42 # {{inputPath}} {{outputPath}}',
         cwd: '/tmp',
         functionName: 'foo',
       });
@@ -330,7 +369,7 @@ describe('Compiler', () => {
       // reverts the stream to paused mode, and a chatty child then deadlocks
       // on a full pipe buffer.
       const compiler = createCompiler({
-        command: `head -c 200000 /dev/zero 1>&2; exit 1`,
+        command: `head -c 200000 /dev/zero 1>&2; exit 1 # {{inputPath}} {{outputPath}}`,
         cwd: '/tmp',
         functionName: 'foo',
       });
@@ -379,7 +418,7 @@ describe('Compiler', () => {
 
       const compiler = createCompiler({
         // exec replaces the shell with sleep, so SIGTERM reaches it directly
-        command: 'exec sleep 30',
+        command: 'exec sleep 30 # {{inputPath}} {{outputPath}}',
         cwd: '/tmp',
         functionName: 'foo',
         signal: controller.signal,
@@ -402,7 +441,7 @@ describe('Compiler', () => {
       const controller = new AbortController();
 
       const compiler = createCompiler({
-        command: 'sleep 30',
+        command: 'sleep 30 # {{inputPath}} {{outputPath}}',
         cwd: '/tmp',
         functionName: 'foo',
         signal: controller.signal,
@@ -415,7 +454,7 @@ describe('Compiler', () => {
       const result = await promise;
       const elapsed = Date.now() - start;
 
-      expect(result.success).toBe(false);
+      expect(result).toEqual({ success: false, error: 'Aborted' });
       // Should return in well under 30 seconds; 3 s is ample headroom.
       expect(elapsed).toBeLessThan(3_000);
     }, 10_000);
@@ -452,41 +491,25 @@ describe('Compiler', () => {
       expect(unique.size).toBe(sources.length);
     });
 
-    it('does not leak temp dirs when parallel compiles race #ensureTmpDir', async () => {
-      // Regression for the old `#tmpDir: string | null` cache: parallel compiles
-      // all observed `null` and each called mkdtemp(), leaking N-1 directories
-      // that `destroy()` never reached. The fix caches a single Promise.
-      // NB: we diff before/after around this specific compiler, but other
-      // tests (and worker subprocess tests) can create `transmuter-*` dirs in
-      // parallel — so we enforce the "no leak" invariant on this compiler's
-      // own delta, not the total count.
-      const isCompilerTmpDir = (d: string) => /^transmuter-[a-zA-Z0-9]+$/.test(d);
-      const tmpRoot = os.tmpdir();
-      const before = new Set((await fs.readdir(tmpRoot)).filter(isCompilerTmpDir));
-
+    it('removes every scratch directory on destroy', async () => {
       const compiler = createCompiler({
         command: AGBCC_COMMAND,
         cwd: COMPILERS_DIR,
         functionName: 'foo',
       });
 
-      // Fire many compiles in parallel — all from a single synchronous `.map`,
-      // ensuring they all pass through #ensureTmpDir before any mkdtemp resolves.
       const sources = Array.from({ length: 8 }, (_, i) => `int foo(void) { return ${i}; }`);
-      await Promise.all(sources.map((s) => compiler.compile(s)));
+      const results = await Promise.all(sources.map((s) => compiler.compile(s)));
+      const dirs = results.map((r) => {
+        expectOk(r);
+        return path.dirname(r.objPath);
+      });
+      expect(new Set(dirs).size).toBe(sources.length);
 
-      const afterCompile = (await fs.readdir(tmpRoot)).filter(isCompilerTmpDir);
-      const newDirsFromThisCompiler = afterCompile.filter((d) => !before.has(d));
-      // Exactly one dir per this compiler (the regression: was 8 with the old code).
-      expect(newDirsFromThisCompiler.length).toBeGreaterThanOrEqual(1);
-      expect(newDirsFromThisCompiler.length).toBeLessThan(sources.length);
-
-      // And destroy() should remove this compiler's own dir (others from
-      // concurrent tests may remain).
-      const ownDir = newDirsFromThisCompiler[0]!;
       await compiler.destroy();
-      const afterDestroy = new Set((await fs.readdir(tmpRoot)).filter(isCompilerTmpDir));
-      expect(afterDestroy.has(ownDir)).toBe(false);
+      for (const dir of dirs) {
+        await expect(fs.access(dir)).rejects.toThrow();
+      }
     });
   });
 
@@ -554,7 +577,7 @@ describe('Compiler', () => {
       // A slow command: sleep, then write some output. If destroy() does NOT
       // wait, the compile finds its tmpdir gone mid-write and returns an error.
       const compiler = createCompiler({
-        command: `sleep 0.3 && echo done > {{outputPath}}`,
+        command: `sleep 0.3 && echo done > {{outputPath}} # {{inputPath}}`,
         cwd: '/tmp',
         functionName: 'foo',
       });
@@ -572,11 +595,11 @@ describe('Compiler', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Temp directory reuse
+  // Object directories
   // ---------------------------------------------------------------------------
 
-  describe('temp directory reuse', () => {
-    it('uses the same temp directory across compilations', async () => {
+  describe('object directories', () => {
+    it('compiles in a fresh directory each time, and cleanup removes it', async () => {
       const compiler = createCompiler({
         command: AGBCC_COMMAND,
         cwd: COMPILERS_DIR,
@@ -584,11 +607,13 @@ describe('Compiler', () => {
       });
 
       const r1 = await compiler.compile(VALID_C_SOURCE);
-      const r2 = await compiler.compile(VALID_C_SOURCE);
-
       expectOk(r1);
+      await Compiler.cleanup(r1.objPath);
+      const r2 = await compiler.compile(VALID_C_SOURCE);
       expectOk(r2);
-      expect(path.dirname(r1.objPath)).toBe(path.dirname(r2.objPath));
+
+      expect(path.dirname(r1.objPath)).not.toBe(path.dirname(r2.objPath));
+      await expect(fs.access(path.dirname(r1.objPath))).rejects.toThrow();
     });
   });
 
@@ -599,7 +624,7 @@ describe('Compiler', () => {
   describe('working directory', () => {
     it('executes compiler in the specified cwd', async () => {
       const compiler = createCompiler({
-        command: `pwd > {{outputPath}}`,
+        command: `pwd > {{outputPath}} # {{inputPath}}`,
         cwd: COMPILERS_DIR,
         functionName: 'foo',
       });

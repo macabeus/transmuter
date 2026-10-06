@@ -78,6 +78,9 @@ importers:
       '@ast-grep/napi':
         specifier: ^0.36.0
         version: 0.36.3
+      '@match-kit/compiler':
+        specifier: 0.1.0
+        version: 0.1.0
       '@match-kit/scoring':
         specifier: 0.1.0
         version: 0.1.0
@@ -691,6 +694,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@match-kit/compiler@0.1.0':
+    resolution: {integrity: sha512-te7Ai1ul2Eq8uu8/GAPMfgVaWdRzBZh8ncLmCBn24qAMKODFaZ3NQ/Qj86Ef6bN8uND08naAscpE9vSLwZ7/Rg==}
+    engines: {node: '>=24'}
 
   '@match-kit/decomp-yaml@0.1.0':
     resolution: {integrity: sha512-OBeM70MXAzC3bnaxyiuuy4eqxR54LdJVGICGDSkOJ3Nzl7y/FDEtxc8G0nB/HQ3wRCOJHHkEJIGNyjFFO9uGWQ==}
@@ -2783,6 +2790,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@match-kit/compiler@0.1.0': {}
 
   '@match-kit/decomp-yaml@0.1.0':
     dependencies:

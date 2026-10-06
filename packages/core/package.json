@@ -28,6 +28,7 @@
   "dependencies": {
     "@ast-grep/lang-cpp": "^0.0.6",
     "@ast-grep/napi": "^0.36.0",
+    "@match-kit/compiler": "0.1.0",
     "@match-kit/scoring": "0.1.0",
     "diff": "^8.0.4",
     "tree-sitter-c": "^0.21.4",
